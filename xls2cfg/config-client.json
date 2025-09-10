@@ -1,0 +1,45 @@
+{
+    "input": "../Excel",
+    "output": "../ExcelOutputClient",
+    "outputFormats": [
+        "csharp"
+    ],
+    "keywords": [
+        "int",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "string",
+        "bool",
+        "float",
+        "double",
+        "default",
+        "enum",
+        "object",
+        "function",
+        "end",
+        "break",
+        "continue",
+        "return",
+        "for",
+        "while",
+        "do",
+        "if",
+        "else",
+        "elseif",
+        "elif"
+    ],
+    "genHeader": true,
+    "genHeaderDetail": true,
+    "i18nDirectory" : "../translate",
+    "i18nLanguage": "zh_Hant",
+    "i18nExtension":".po",
+    "i18nExportOneFile" : true,
+    "localize" : true,
+    "pretty": true,
+    "classNameFirstUpper" : true,
+    "tags": [
+        "client"
+    ]
+}

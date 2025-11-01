@@ -34,7 +34,7 @@ def _readI18nTxtFile(filename,i18nSeperator,dictTexts):
 def _readI18nLuaFile(filename,dictTexts):
     if not os.path.exists(filename):
         return []
-    patten = re.compile('\s*\["(.+)"\] = "(.*)"',re.S)
+    patten = re.compile(r'\s*\["(.+)"\] = "(.*)"',re.S)
     texts = []
     fd = open(filename,"rb")
     if not fd:

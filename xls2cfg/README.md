@@ -16,7 +16,7 @@
 
 ## 用法
 
-双击 export_excel.bat
+双击 gen.bat
 
 [Back to TOC](#table-of-contents)
 

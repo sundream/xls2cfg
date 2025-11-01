@@ -1,6 +1,6 @@
 {
     "input": "../Excel",
-    "output": "../ExcelOutputServer",
+    "output": "../output/server",
     "outputFormats": ["lua"],
     "keywords": [
         "int",

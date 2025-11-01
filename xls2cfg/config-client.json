@@ -1,6 +1,6 @@
 {
     "input": "../Excel",
-    "output": "../ExcelOutputClient",
+    "output": "../output/client",
     "outputFormats": [
         "csharp"
     ],

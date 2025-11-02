@@ -148,8 +148,9 @@ class Type(object):
         if not self.fields:
             self.fields = []
         field = Field(fullTypename,name,comment,tags)
+        field.index = len(self.fields)
         self.fields.append(field)
-        return len(self.fields) - 1
+        return field.index
 
     def setIdField(self,idFieldIdx):
         self.idFieldIdx = idFieldIdx
@@ -178,3 +179,4 @@ class Field(object):
         self.name = name                            # 字段名
         self.comment = comment                      # 字段备注
         self.tags = tags                            # 字段标签列表
+        self.index = -1                             # 字段索引

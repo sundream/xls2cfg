@@ -17,7 +17,9 @@ class XlsParser(object):
         self.output = output    # 输出路径
         self.deepth = 0
         self.pretty = Config.pretty
+        self.singleton = self.sheet.singleton
         self.buildType()
+        self.buildData()
 
     def write(self,filename,body):
         header = self.genHeader()
@@ -27,7 +29,12 @@ class XlsParser(object):
     def _write(self,filename,data):
         output = self.output
         print("write",output,filename)
-        filename = os.path.join(output,filename + self.extension)
+        filename = os.path.join(output,filename)
+        self.writeTo(filename,data)
+
+    @classmethod
+    def writeTo(cls,filename,data):
+        filename += cls.extension
         parent_dir = os.path.dirname(filename)
         if parent_dir != "" and not os.path.isdir(parent_dir):
             os.makedirs(parent_dir)
@@ -63,6 +70,8 @@ class XlsParser(object):
         tags = self.sheet.col2tags[col]
         return Config.isNeedExportTags(tags)
 
+    typeMaps = {}       # 类型 -> 语言类型映射
+
     def buildType(self):
         className = self.sheet.filename
         if Config.classNameFirstUpper:
@@ -85,8 +94,57 @@ class XlsParser(object):
             if not self.sheet.singleton and col == self.sheet.idCol:
                 self.type.setIdField(idx)
 
+
+    @classmethod
+    def buildTypeContext(cls,typ):
+        hasBigInt = False
+        for field in typ.fields:
+            if field.type.fullTypename.find("bigint") >= 0:
+                hasBigInt = True
+        typ.context = {}
+        typ.context["hasBigInt"] = hasBigInt
+        typ.context["className"] = typ.typename
+        typ.context["namespace"] = "Cfg"
+        idField = typ.getIdField()
+        if idField:
+            typ.context["idFieldName"] = idField.name
+        fields = []
+        if len(cls.typeMaps) == 0:
+            return
+        for field in typ.fields:
+            fields.append({
+                "name": field.name,
+                "typename": cls.getLangTypename(field.type),
+                "comment": field.comment,
+                "index": field.index,
+            })
+        typ.context["fields"] = fields
+
+    @classmethod
+    def getLangTypename(cls,typ):
+        pass
+
+    def buildData(self):
+        self.dataMap = {}
+        self.dataList = []
+        for row in range(0,self.sheet.dataRow):
+            data = {}
+            for col in range(0,self.sheet.maxCol):
+                if not self.isNeedExportCol(col):
+                    continue
+                value = self.sheet.value(row,col)
+                if self.sheet.col2key[col]:
+                    data[self.sheet.col2key[col]] = value
+            self.dataList.append(data)
+
+        if not self.sheet.singleton:
+            uniqueKey = self.sheet.col2key[self.sheet.idCol]
+            for data in self.dataList:
+                uniqueId = data[uniqueKey]
+                self.dataMap[uniqueId] = data
+
     # 生成类定义代码
-    @staticmethod
+    @classmethod
     def writeClass(typ,output):
         pass
 
@@ -96,14 +154,14 @@ class XlsParser(object):
 
     # 可重写,生成全部配置后最后调用
     @classmethod
-    def endParse(cls,output):
+    def endParse(cls,outputPath):
         pass
 
     @classmethod
-    def writeAllClass(cls,output):
+    def writeAllClass(cls,outputPath):
         for typename,typ in Type.types.items():
             if typ.isClass() and typename != "__Field__":
-                cls.writeClass(typ,output)
+                cls.writeClass(typ,outputPath)
 
     # 格式化值,对于json/list/map/array返回字符串列表,否则返回字符串
     def formatValue(self,value):

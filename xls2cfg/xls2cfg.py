@@ -15,6 +15,7 @@ from XlsParser.Xls2LuaCvsParser import Xls2LuaCvsParser
 from XlsParser.Xls2JsonParser import Xls2JsonParser
 from XlsParser.Xls2BinaryParser import Xls2BinaryParser
 from XlsParser.Xls2CSharpParser import Xls2CSharpParser
+from XlsParser.Xls2GoParser import Xls2GoParser
 from XlsParser.Sheet import Sheet
 from XlsParser.Sheet import getSheets
 from XlsParser.I18NExport import readI18nFile,writeI18nFile
@@ -169,6 +170,8 @@ e.g:
             Parser = Xls2BinaryParser
         elif outputFormat == "csharp":
             Parser = Xls2CSharpParser
+        elif outputFormat == "go":
+            Parser = Xls2GoParser
 
         # 生成配置文件
         output = os.path.join(outputDir,outputFormat)

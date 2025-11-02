@@ -1,3 +1,4 @@
 /xls2cfg/XlsParser/__pycache__
 /translate
 /output
+/xls2cfg/__pycache__/*.pyc

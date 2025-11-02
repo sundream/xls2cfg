@@ -3,8 +3,6 @@
 #@date 2025-09-10
 
 from XlsParser.XlsParser import XlsParser
-from XlsParser.Xls2JsonParser import Xls2JsonParser
-from XlsParser.Xls2BinaryParser import Xls2BinaryParser
 from XlsParser.Type import Type
 from XlsParser.Config import Config
 import os
@@ -279,8 +277,6 @@ $fieldToString
 
     def __init__(self,sheet,output):
         XlsParser.__init__(self,sheet,output)
-        self.xls2JsonParser = Xls2JsonParser(sheet,os.path.join(self.output,"../json"))
-        self.xls2BinaryParser = Xls2BinaryParser(sheet,os.path.join(self.output,"../binary"))
 
     def parse(self):
         if self.isEmpty():
@@ -320,8 +316,6 @@ $fieldToString
                 "$className" : className,
                 "$filename" : filename,
             }))
-        self.xls2JsonParser.parse()
-        self.xls2BinaryParser.parse()
 
     @staticmethod
     def getCSharpTypename(typ):
@@ -385,9 +379,9 @@ $fieldToString
         fd.write(data.encode())
         fd.close()
 
-    @staticmethod
-    def writeClass(typ,output):
-        Parser = Xls2CSharpParser
+    @classmethod
+    def writeClass(cls,typ,output):
+        Parser = cls
         className = typ.typename
         fieldDefine = []
         fieldInitFromJson = []

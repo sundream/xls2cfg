@@ -2,7 +2,7 @@
     "input": "../Excel",
     "output": "../output/client",
     "outputFormats": [
-        "csharp"
+        "csharp","binary","json"
     ],
     "keywords": [
         "int",

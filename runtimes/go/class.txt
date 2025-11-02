@@ -1,0 +1,40 @@
+package {{namespace}}
+
+import (
+    "encoding/json"
+)
+
+type {{className}} struct {
+    {% for field in fields -%}
+    {{field.langName}} {{field.typename}} `json:"{{field.name}}"`   // {{field.comment}}
+    {% endfor %}
+}
+
+func (o *{{className}}) DeserializeFromJson(buf []byte) error {
+    jsonData := make(map[string]any, 0)
+    if err := json.Unmarshal(buf, &jsonData); err != nil {
+        return err
+    }
+    return o.DeserializeFromJsonX(jsonData)
+}
+
+func (o *{{className}}) DeserializeFromJsonX(jsonData map[string]any) error {
+    {% for field in fields -%}
+    {{formatFieldFromJson(field.index)}}
+    {% endfor %}
+    return nil
+}
+
+func (o *{{className}}) DeserializeFromBinary(buf []byte) error {
+    bs := NewByteStream(buf)
+    defer DestroyByteStream(bs)
+    return o.DeserializeFromBinaryX(bs)
+}
+
+func (o *{{className}}) DeserializeFromBinaryX(bs *ByteStream) error {
+    var err error;
+    {% for field in fields -%}
+    {{formatFieldFromBinary(field.index)}}
+    {% endfor %}
+    return nil
+}

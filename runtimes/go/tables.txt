@@ -1,14 +1,14 @@
 package {{namespace}}
 
 import (
-    "encoding/json"
-    "reflect"
-    "fmt"
+	"encoding/json"
+	"reflect"
+	"fmt"
 )
 
 const (
-    Format_Json = iota
-    Format_Binary
+	Format_Json = iota
+	Format_Binary
 )
 
 var Format = Format_Json
@@ -16,97 +16,97 @@ var Format = Format_Json
 type LoadFromFileCallback func (fileName string) ([]byte,error);
 
 type Tables struct {
-    {% for sheet in sheets -%}
-    {% if sheet.singleton -%}
-    {{sheet.instName}} {{sheet.className}}
-    {% else -%}
-    {{sheet.instName}} map[{{sheet.keyTypename}}]{{sheet.className}}
-    {% endif -%}
-    {% endfor %}
+	{% for sheet in sheets -%}
+	{% if sheet.singleton -%}
+	{{sheet.instName}} {{sheet.className}}
+	{% else -%}
+	{{sheet.instName}} map[{{sheet.keyTypename}}]{{sheet.className}}
+	{% endif -%}
+	{% endfor %}
 }
 
 func NewTables(loadFromFile LoadFromFileCallback) (*Tables,error) {
-    var err error
-    var buf []byte
-    tables := &Tables{}
-    if Format == Format_Json {
-        {% for sheet in sheets -%}
-        buf,err = loadFromFile("{{sheet.fileName}}")
-        if err != nil {
-            return nil, err
-        }
-        {% if sheet.singleton -%}
-        err = tables.{{sheet.instName}}.DeserializeFromJson(buf)
-        {% else -%}
-        tables.{{sheet.instName}} = make(map[{{sheet.keyTypename}}]{{sheet.className}},0)
-        err = DeserializeTableFromJson(tables.{{sheet.instName}},"{{sheet.keyName}}",buf)
-        {% endif -%}
-        if err != nil {
-            return nil, err
-        }
-        {% endfor %}
-    } else {
-        {% for sheet in sheets -%}
-        buf,err = loadFromFile("{{sheet.fileName}}")
-        if err != nil {
-            return nil, err
-        }
-        {% if sheet.singleton -%}
-        err = tables.{{sheet.instName}}.DeserializeFromBinary(buf)
-        {% else -%}
-        tables.{{sheet.instName}} = make(map[{{sheet.keyTypename}}]{{sheet.className}},0)
-        err = DeserializeTableFromBinary(tables.{{sheet.instName}},"{{sheet.keyName}}",buf)
-        {% endif -%}
-        if err != nil {
-            return nil, err
-        }
-        {% endfor %}
-    }
-    return tables,nil
+	var err error
+	var buf []byte
+	tables := &Tables{}
+	if Format == Format_Json {
+		{% for sheet in sheets -%}
+		buf,err = loadFromFile("{{sheet.fileName}}")
+		if err != nil {
+			return nil, err
+		}
+		{% if sheet.singleton -%}
+		err = tables.{{sheet.instName}}.DeserializeFromJson(buf)
+		{% else -%}
+		tables.{{sheet.instName}} = make(map[{{sheet.keyTypename}}]{{sheet.className}},0)
+		err = DeserializeTableFromJson(tables.{{sheet.instName}},"{{sheet.keyName}}",buf)
+		{% endif -%}
+		if err != nil {
+			return nil, err
+		}
+		{% endfor %}
+	} else {
+		{% for sheet in sheets -%}
+		buf,err = loadFromFile("{{sheet.fileName}}")
+		if err != nil {
+			return nil, err
+		}
+		{% if sheet.singleton -%}
+		err = tables.{{sheet.instName}}.DeserializeFromBinary(buf)
+		{% else -%}
+		tables.{{sheet.instName}} = make(map[{{sheet.keyTypename}}]{{sheet.className}},0)
+		err = DeserializeTableFromBinary(tables.{{sheet.instName}},"{{sheet.keyName}}",buf)
+		{% endif -%}
+		if err != nil {
+			return nil, err
+		}
+		{% endfor %}
+	}
+	return tables,nil
 }
 
 func DeserializeTableFromJson[K comparable,V any](table map[K]V,keyName string,buf []byte) error {
-    jsonData := make([]map[string]any, 0)
-    if err := json.Unmarshal(buf, &jsonData); err != nil {
-        return err
-    }
-    count := len(jsonData)
-    for i := 0; i < count; i++ {
-        vPtr := reflect.New(reflect.TypeOf((*V)(nil)).Elem())
-        v := vPtr.Elem()
-        method := vPtr.MethodByName("DeserializeFromJsonX")
-        if !method.IsValid() {
-            return fmt.Errorf("type %T does not have a DeserializeFromJsonX method", v.Interface())
-        }
-        results := method.Call([]reflect.Value{reflect.ValueOf(jsonData[i])})
-        if len(results) > 0 && !results[0].IsNil() {
-            return results[0].Interface().(error)
-        }
-        key := v.FieldByName(keyName).Interface().(K)
-        table[key] = v.Interface().(V)
-    }
-    return nil
+	jsonData := make([]map[string]any, 0)
+	if err := json.Unmarshal(buf, &jsonData); err != nil {
+		return err
+	}
+	count := len(jsonData)
+	for i := 0; i < count; i++ {
+		vPtr := reflect.New(reflect.TypeOf((*V)(nil)).Elem())
+		v := vPtr.Elem()
+		method := vPtr.MethodByName("DeserializeFromJsonX")
+		if !method.IsValid() {
+			return fmt.Errorf("type %T does not have a DeserializeFromJsonX method", v.Interface())
+		}
+		results := method.Call([]reflect.Value{reflect.ValueOf(jsonData[i])})
+		if len(results) > 0 && !results[0].IsNil() {
+			return results[0].Interface().(error)
+		}
+		key := v.FieldByName(keyName).Interface().(K)
+		table[key] = v.Interface().(V)
+	}
+	return nil
 }
 
 func DeserializeTableFromBinary[K comparable,V any](table map[K]V,keyName string,buf []byte) error {
-    bs := NewByteStream(buf)
-    count,err := bs.ReadUInt16()
-    if err != nil {
-        return err
-    }
-    for i := 0; i < int(count); i++ {
-        vPtr := reflect.New(reflect.TypeOf((*V)(nil)).Elem())
-        v := vPtr.Elem()
-        method := vPtr.MethodByName("DeserializeFromBinaryX")
-        if !method.IsValid() {
-            return fmt.Errorf("type %T does not have a DeserializeFromBinaryX method", v.Interface())
-        }
-        results := method.Call([]reflect.Value{reflect.ValueOf(bs)})
-        if len(results) > 0 && !results[0].IsNil() {
-            return results[0].Interface().(error)
-        }
-        key := v.FieldByName(keyName).Interface().(K)
-        table[key] = v.Interface().(V)
-    }
-    return nil
+	bs := NewByteStream(buf)
+	count,err := bs.ReadUInt16()
+	if err != nil {
+		return err
+	}
+	for i := 0; i < int(count); i++ {
+		vPtr := reflect.New(reflect.TypeOf((*V)(nil)).Elem())
+		v := vPtr.Elem()
+		method := vPtr.MethodByName("DeserializeFromBinaryX")
+		if !method.IsValid() {
+			return fmt.Errorf("type %T does not have a DeserializeFromBinaryX method", v.Interface())
+		}
+		results := method.Call([]reflect.Value{reflect.ValueOf(bs)})
+		if len(results) > 0 && !results[0].IsNil() {
+			return results[0].Interface().(error)
+		}
+		key := v.FieldByName(keyName).Interface().(K)
+		table[key] = v.Interface().(V)
+	}
+	return nil
 }

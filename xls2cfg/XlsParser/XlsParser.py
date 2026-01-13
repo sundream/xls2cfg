@@ -21,10 +21,13 @@ class XlsParser(object):
         self.buildType()
         self.buildData()
 
-    def write(self,filename,body):
-        header = self.genHeader()
-        data = header + body
+    def write(self,filename,data):
         self._write(filename,data)
+        if Config.genSchema:
+            self.writeSchema(filename)
+
+    def writeSchema(self,filename):
+        pass
 
     def _write(self,filename,data):
         output = self.output
@@ -41,18 +44,6 @@ class XlsParser(object):
         fd = open(filename,"wb")
         fd.write(data.encode())
         fd.close()
-
-    def genHeader(self):
-        if not Config.genHeader:
-            return ""
-        codeComment = self.codeComment
-        lines = []
-        if self.type.comment:
-            lines.append("%s%s" % (codeComment,self.type.comment))
-        lines.append("%s@class Cfg.%s" % (codeComment,self.type.fullTypename))
-        for field in self.type.fields:
-            lines.append("%s@field %-48s%-32s%s" % (codeComment,field.name,field.type.fullTypename,field.comment))
-        return "\n".join(lines) + "\n\n"
 
     def isEmpty(self):
         if self.sheet.dataRow == 0:
@@ -85,7 +76,7 @@ class XlsParser(object):
             fieldTypename = self.sheet.col2type[col].fullTypename
             fieldName = self.sheet.col2key[col]
             fieldComment = self.sheet.col2desc[col]
-            if Config.genHeaderDetail:
+            if Config.genSchemaDetail:
                 comment = self.sheet.col2comment[col]
                 if comment:
                     fieldComment = fieldComment +"(" + comment + ")"

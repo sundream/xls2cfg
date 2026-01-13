@@ -2,6 +2,7 @@
 #@author sundream
 #@date 2025-09-10
 
+import os
 from XlsParser.XlsParser import XlsParser
 
 class Xls2LuaParser(XlsParser):
@@ -127,3 +128,16 @@ class Xls2LuaParser(XlsParser):
             result.extend(lines)
         result.append('}')
         return result
+
+    def writeSchema(self,filename):
+        codeComment = self.codeComment
+        lines = []
+        if self.type.comment:
+            lines.append("%s%s" % (codeComment,self.type.comment))
+        lines.append("%s@class Cfg.%s" % (codeComment,self.type.fullTypename))
+        for field in self.type.fields:
+            lines.append("%s@field %-48s%-32s%s" % (codeComment,field.name,field.type.fullTypename,field.comment))
+        data = "\n".join(lines) + "\n\n"
+        filename = os.path.join("meta",filename)
+        self._write(filename,data)
+

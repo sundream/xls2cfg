@@ -36,9 +36,6 @@ class Xls2GoParser(XlsParser):
     def __init__(self,sheet,output):
         XlsParser.__init__(self,sheet,output)
 
-    def genHeader(self):
-        return ""
-
     @classmethod
     def getLangTypename(cls,typ):
         typename = typ.typename

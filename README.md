@@ -12,6 +12,7 @@
   - pip install Jinja2
 - 仅对程序有用,当工具代码改变后,需要重新构建时执行
 - 执行 build.bat
+- xls2cfg.exe目前已构建，没改动代码可以不执行构建步骤
 
 [Back to TOC](#table-of-contents)
 

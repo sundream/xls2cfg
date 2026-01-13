@@ -13,9 +13,8 @@ const (
 )
 
 var Format = Format_Json
-var Table *Tables
 
-type LoadFromFileCallback func (fileName string) ([]byte,error);
+type LoadFromFileCallback func (fileName string) ([]byte, error);
 
 type Tables struct {
 	{% for sheet in sheets -%}
@@ -27,7 +26,7 @@ type Tables struct {
 	{% endfor %}
 }
 
-func NewTables(loadFromFile LoadFromFileCallback) (*Tables,error) {
+func NewTables(loadFromFile LoadFromFileCallback) (*Tables, error) {
 	var err error
 	var buf []byte
 	tables := &Tables{}
@@ -41,7 +40,7 @@ func NewTables(loadFromFile LoadFromFileCallback) (*Tables,error) {
 		err = tables.{{sheet.instName}}.DeserializeFromJson(buf)
 		{% else -%}
 		tables.{{sheet.instName}} = make(map[{{sheet.keyTypename}}]*{{sheet.className}},0)
-		err = DeserializeTableFromJson(tables.{{sheet.instName}},"{{sheet.keyName}}",buf)
+		err = DeserializeTableFromJson(tables.{{sheet.instName}}, "{{sheet.keyName}}",buf)
 		{% endif -%}
 		if err != nil {
 			return nil, err
@@ -57,18 +56,17 @@ func NewTables(loadFromFile LoadFromFileCallback) (*Tables,error) {
 		err = tables.{{sheet.instName}}.DeserializeFromBinary(buf)
 		{% else -%}
 		tables.{{sheet.instName}} = make(map[{{sheet.keyTypename}}]*{{sheet.className}},0)
-		err = DeserializeTableFromBinary(tables.{{sheet.instName}},"{{sheet.keyName}}",buf)
+		err = DeserializeTableFromBinary(tables.{{sheet.instName}}, "{{sheet.keyName}}",buf)
 		{% endif -%}
 		if err != nil {
 			return nil, err
 		}
 		{% endfor %}
 	}
-	Table = tables
 	return tables,nil
 }
 
-func DeserializeTableFromJson[K comparable, P any, V ~*P](table map[K]V,keyName string,buf []byte) error {
+func DeserializeTableFromJson[K comparable, P any, V ~*P](table map[K]V, keyName string, buf []byte) error {
 	jsonData := make([]map[string]any, 0)
 	if err := json.Unmarshal(buf, &jsonData); err != nil {
 		return err
@@ -91,7 +89,7 @@ func DeserializeTableFromJson[K comparable, P any, V ~*P](table map[K]V,keyName 
 	return nil
 }
 
-func DeserializeTableFromBinary[K comparable, P any, V ~*P](table map[K]V,keyName string,buf []byte) error {
+func DeserializeTableFromBinary[K comparable, P any, V ~*P](table map[K]V, keyName string, buf []byte) error {
 	bs := NewByteStream(buf)
 	count,err := bs.ReadUInt16()
 	if err != nil {

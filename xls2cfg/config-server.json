@@ -1,6 +1,6 @@
 {
     "input": "../Excel",
-    "output": "../output/server",
+    "output": "../Output/Server",
     "outputFormats": ["lua","go","binary","json"],
     "keywords": [
         "int",
@@ -31,7 +31,7 @@
     "genHeader": true,
     "genHeaderDetail": true,
     "i18nDirectory": "../translate",
-    "i18nLanguage": "zh_Hant",
+    "i18nLanguage": "zh_CN",
     "i18nExtension": ".po",
     "i18nExportOneFile": true,
     "localize": true,

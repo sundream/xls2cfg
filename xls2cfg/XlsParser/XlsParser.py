@@ -135,7 +135,8 @@ class XlsParser(object):
                 value = self.sheet.value(row,col)
                 if self.sheet.col2key[col]:
                     data[self.sheet.col2key[col]] = value
-            self.dataList.append(data)
+            if data:
+                self.dataList.append(data)
 
         if not self.sheet.singleton:
             uniqueKey = self.sheet.col2key[self.sheet.idCol]

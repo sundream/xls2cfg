@@ -125,7 +125,7 @@ def toMask(value):
         return value,False
     try:
         result = 0
-        lst = ast.literal_eval(value)
+        lst = json.loads(value)
         for power in lst:
             if type(power) != int:
                 return value,False
@@ -136,10 +136,11 @@ def toMask(value):
     except Exception as e:
         return value,False
 
-def toJson(value):
+def toJson(value,options=None):
     try:
         if type(value) == str:
-            value = json.loads(value)
+            if not options or options.get("depth",0) == 1:
+                value = json.loads(value)
         return value,True
     except Exception as e:
         return value,False
@@ -150,7 +151,7 @@ def toList(value,typ,options):
             length = len(value)
             if value[0] != '[' and value[length-1] != ']':
                 value = '[' + value + ']'
-            value = ast.literal_eval(value)
+            value = json.loads(value)   # 实测json.loads比ast.literal_eval快6-7倍
         if type(value) != list:
             return value,False
         result = []
@@ -167,7 +168,7 @@ def toList(value,typ,options):
 def toMap(value,typ,options):
     try:
         if type(value) == str:
-            value = ast.literal_eval(value)
+            value = json.loads(value)
         if type(value) != dict:
             return value,False
         result = {}
@@ -184,8 +185,8 @@ def toMap(value,typ,options):
 def toClass(value,typ,options):
     try:
         if type(value) == str:
-            value = ast.literal_eval(value)
-        if type(value) != tuple and type(value) != list:
+            value = json.loads(value)
+        if type(value) != list:
             return value,False
         result = {}
         for i,v in enumerate(value):
@@ -208,6 +209,7 @@ def toValue(value,typ,options=None):
         row = options["row"]
         col = options["col"]
         localize = options["localize"]
+        options["depth"] = options.get("depth",0) + 1
 
     if not typ:
         return False,"type is None"
@@ -268,7 +270,7 @@ def toValue(value,typ,options=None):
         if not ok:
             return False,"expect '%s',but got python type '%s',value=%s" % (typename,pythonType,value)
         if typename == "i18nstring":
-            setI18NText(value,xlsFilename,"%s%s" % (get_column_letter(col+1),row+1))
+            setI18NText(escapeString(value),xlsFilename,"%s%s" % (get_column_letter(col+1),row+1))
             if localize:
                 value = getLocalizeText(value) or value
     elif typename == "bit32":
@@ -280,7 +282,7 @@ def toValue(value,typ,options=None):
         if not ok or not isInt64(value):
             return False,"not a valid bit64 format"
     elif typename == "json":
-        value,ok = toJson(value)
+        value,ok = toJson(value,options)
         if not ok:
             return False,"not a valid json format"
     elif typename == "list":

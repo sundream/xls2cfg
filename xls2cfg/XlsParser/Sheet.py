@@ -260,7 +260,8 @@ class Sheet(object):
                     "xlsFilename":self.filename,
                     "row":i,
                     "col":j,
-                    "localize":localize
+                    "localize":localize,
+                    "depth":0,
                 })
                 if not ok:
                     raise Exception(self.message(i,j,errMsg))

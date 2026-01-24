@@ -83,6 +83,8 @@ e.g:
         Config.tags = jsonConfig.get("tags")
     if "classNameFirstUpper" in jsonConfig:
         Config.classNameFirstUpper = jsonConfig.get("classNameFirstUpper")
+    if "fieldNameFirstUpper" in jsonConfig:
+        Config.fieldNameFirstUpper = jsonConfig.get("fieldNameFirstUpper")
     if "constraintSeperator" in jsonConfig:
         Config.constraintSeperator = jsonConfig.get("constraintSeperator")
     if "indent" in jsonConfig:

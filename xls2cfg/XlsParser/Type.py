@@ -99,6 +99,7 @@ class Type(object):
         self.idFieldIdx = -1                        # id域索引
         self.comment = None                         # 类型备注
         self.__fromString(fullTypename)
+        self.singleton = False                      # true=单例类型
 
     @staticmethod
     def __convTypename(fullTypename):

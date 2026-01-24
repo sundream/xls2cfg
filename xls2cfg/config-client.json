@@ -32,14 +32,16 @@
     ],
     "genSchema": true,
     "genSchemaDetail": true,
-    "i18nDirectory" : "../translate",
+    "i18nDirectory": "../Output/I18N",
     "i18nLanguage": "zh_CN",
     "i18nExtension":".po",
     "i18nExportOneFile" : true,
     "localize" : true,
     "pretty": true,
     "classNameFirstUpper" : true,
+    "fieldNameFirstUpper": true,
+    "namespace" : "cfg",
     "tags": [
-        "client"
+        "c"
     ]
 }

@@ -7,7 +7,7 @@ import (
 
 type {{className}} struct {
 	{% for field in fields -%}
-	{{field.langName}} {{field.typename}} `json:"{{field.name}}"`   // {{field.comment}}
+	{{field.name}} {{field.typename}} `json:"{{field._name}}"`   // {{field.comment}}
 	{% endfor %}
 }
 

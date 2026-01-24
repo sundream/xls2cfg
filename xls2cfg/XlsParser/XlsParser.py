@@ -64,12 +64,12 @@ class XlsParser(object):
     typeMaps = {}       # 类型 -> 语言类型映射
 
     def buildType(self):
-        className = self.sheet.filename
-        if Config.classNameFirstUpper:
-            className = className[0].upper() + className[1:]
+        className = self.__class__.formatClassName(self.sheet.filename)
         self.type = Type.createClass(className)
         if self.sheet.comment:
             self.type.comment = self.sheet.comment
+        if self.sheet.singleton:
+            self.type.singleton = True
         for col in range(0,self.sheet.maxCol):
             if not self.isNeedExportCol(col):
                 continue
@@ -95,25 +95,24 @@ class XlsParser(object):
         typ.context = {}
         typ.context["hasBigInt"] = hasBigInt
         typ.context["className"] = typ.typename
-        typ.context["namespace"] = "Cfg"
+        typ.context["namespace"] = cls.formatNamespace(Config.namespace)
+        typ.context["classComment"] = typ.comment if typ.comment else ""
         idField = typ.getIdField()
         if idField:
-            typ.context["idFieldName"] = idField.name
+            typ.context["idName"] = cls.formatFieldName(idField.name)
+            typ.context["idTypename"] = cls.formatType(idField.type)
         fields = []
         if len(cls.typeMaps) == 0:
             return
         for field in typ.fields:
             fields.append({
-                "name": field.name,
-                "typename": cls.getLangTypename(field.type),
+                "_name": field.name,
+                "name": cls.formatFieldName(field.name),
+                "typename": cls.formatType(field.type),
                 "comment": field.comment,
                 "index": field.index,
             })
         typ.context["fields"] = fields
-
-    @classmethod
-    def getLangTypename(cls,typ):
-        pass
 
     def buildData(self):
         self.dataMap = {}
@@ -154,6 +153,24 @@ class XlsParser(object):
         for typename,typ in Type.types.items():
             if typ.isClass() and typename != "__Field__":
                 cls.writeClass(typ,outputPath)
+
+    @classmethod
+    def formatNamespace(cls,namespace):
+        return namespace
+
+    @classmethod
+    def formatType(cls,typ):
+        pass
+
+    @classmethod
+    def formatClassName(cls,typename):
+        if Config.classNameFirstUpper:
+            typename = typename[:1].upper() + typename[1:]
+        return typename
+
+    @classmethod
+    def formatFieldName(cls,fieldName):
+        return fieldName
 
     # 格式化值,对于json/list/map/array返回字符串列表,否则返回字符串
     def formatValue(self,value):

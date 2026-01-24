@@ -4,11 +4,12 @@
 
 from XlsParser.XlsParser import XlsParser
 from XlsParser.Sheet import getSheets
+from XlsParser.Config import Config
 from jinja2 import Template
 import os.path
 
 class Xls2GoParser(XlsParser):
-    codeComment = "---"
+    codeComment = "//"
     extension = ".go"
 
     typeMaps = {
@@ -37,28 +38,8 @@ class Xls2GoParser(XlsParser):
         XlsParser.__init__(self,sheet,output)
 
     @classmethod
-    def getLangTypename(cls,typ):
-        typename = typ.typename
-        if typ.isClass():
-            return typename
-        if cls.typeMaps[typename] is None:
-            raise Exception("unknow typename: %s" % typename)
-        langTypename = cls.typeMaps[typename]
-        if typename == "list":
-            langTypename = "%s%s" % (langTypename,cls.getLangTypename(typ.valueType))
-        elif typename == "map":
-            langTypename = "%s[%s]%s" % (langTypename,cls.getLangTypename(typ.keyType),cls.getLangTypename(typ.valueType))
-        return langTypename
-
-
-    @classmethod
     def writeClass(cls,typ,outputPath):
         cls.buildTypeContext(typ)
-        typ.context["namespace"] = typ.context["namespace"].lower()
-        typ.context["className"] = typ.context["className"][:1].upper() + typ.context["className"][1:]
-        for field in typ.context["fields"]:
-            field["langName"] = field["name"][:1].upper() + field["name"][1:]
-
         classTemplateFilename = "../runtimes/go/class.txt"
         template = Template(open(classTemplateFilename,encoding="utf-8").read())
         typ.context["formatFieldFromJson"] = lambda fieldIndex: cls.formatFieldFromJson(typ,fieldIndex)
@@ -72,7 +53,7 @@ class Xls2GoParser(XlsParser):
         fieldInitStatment = ""
         fieldTypename = field.type.typename
         fieldName = field.name
-        langFieldName = typ.context["fields"][field.index]["langName"]
+        langFieldName = typ.context["fields"][field.index]["name"]
         if field.type.isClass():
             fieldInitStatment = 'if err := DeserializeStructFromJson(&o.{langFieldName},jsonData["{fieldName}"]); err != nil {{ return err }}'.format(fieldName=fieldName,langFieldName=langFieldName)
         elif fieldTypename == "bool":
@@ -103,7 +84,7 @@ class Xls2GoParser(XlsParser):
         fieldInitStatment = ""
         fieldTypename = field.type.typename
         fieldName = field.name
-        langFieldName = typ.context["fields"][field.index]["langName"]
+        langFieldName = typ.context["fields"][field.index]["name"]
         if field.type.isClass():
             fieldInitStatment = 'if err = ReadStruct(bs,&o.{langFieldName}); err != nil {{ return err }}'.format(fieldName=fieldName,langFieldName=langFieldName)
         elif fieldTypename == "bool":
@@ -151,22 +132,49 @@ class Xls2GoParser(XlsParser):
         cls.writeAllClass(outputPath)
         sheets = getSheets()
         context = {
-            "namespace" : "cfg",
+            "namespace" : cls.formatNamespace(Config.namespace),
             "sheets" : [],
         }
         for sheetName,sheet in sheets.items():
-            keyName = sheet.col2key[sheet.idCol]
-            keyName = keyName[:1].upper() + keyName[1:]
-            keyTypename = cls.getLangTypename(sheet.col2type[sheet.idCol])
+            instName = cls.formatFieldName(sheetName)
+            className = cls.formatClassName(sheetName)
+            idName = cls.formatFieldName(sheet.col2key[sheet.idCol])
+            idTypename = cls.formatType(sheet.col2type[sheet.idCol])
             context["sheets"].append({
-                "instName" : sheetName[:1].upper() + sheetName[1:],
-                "className" : sheetName[:1].upper() + sheetName[1:],
+                "instName" : instName,
+                "className" : className,
                 "fileName" : sheetName,
                 "singleton" : sheet.singleton,
-                "keyName" : keyName,
-                "keyTypename" : keyTypename,
+                "idName" : idName,
+                "idTypename" : idTypename,
             })
         tableTemplateFilename = "../runtimes/go/tables.txt"
         template = Template(open(tableTemplateFilename,encoding="utf-8").read())
         data = template.render(context)
         cls.writeTo(os.path.join(outputPath,"tables"),data)
+
+    @classmethod
+    def formatNamespace(cls,namespace):
+        return namespace.lower()
+
+    @classmethod
+    def formatType(cls,typ):
+        typename = typ.typename
+        if typ.isClass():
+            return typename
+        if cls.typeMaps[typename] is None:
+            raise Exception("unknow typename: %s" % typename)
+        langTypename = cls.typeMaps[typename]
+        if typename == "list":
+            langTypename = "%s%s" % (langTypename,cls.formatType(typ.valueType))
+        elif typename == "map":
+            langTypename = "%s[%s]%s" % (langTypename,cls.formatType(typ.keyType),cls.formatType(typ.valueType))
+        return langTypename
+
+    @classmethod
+    def formatClassName(cls,typename):
+        return typename[:1].upper() + typename[1:]
+
+    @classmethod
+    def formatFieldName(cls,fieldName):
+        return fieldName[:1].upper() + fieldName[1:]

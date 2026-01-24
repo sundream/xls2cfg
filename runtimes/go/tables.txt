@@ -21,7 +21,7 @@ type Tables struct {
 	{% if sheet.singleton -%}
 	{{sheet.instName}} {{sheet.className}}
 	{% else -%}
-	{{sheet.instName}} map[{{sheet.keyTypename}}]*{{sheet.className}}
+	{{sheet.instName}} map[{{sheet.idTypename}}]*{{sheet.className}}
 	{% endif -%}
 	{% endfor %}
 }
@@ -39,8 +39,8 @@ func NewTables(loadFromFile LoadFromFileCallback) (*Tables, error) {
 		{% if sheet.singleton -%}
 		err = tables.{{sheet.instName}}.DeserializeFromJson(buf)
 		{% else -%}
-		tables.{{sheet.instName}} = make(map[{{sheet.keyTypename}}]*{{sheet.className}},0)
-		err = DeserializeTableFromJson(tables.{{sheet.instName}}, "{{sheet.keyName}}",buf)
+		tables.{{sheet.instName}} = make(map[{{sheet.idTypename}}]*{{sheet.className}},0)
+		err = DeserializeTableFromJson(tables.{{sheet.instName}}, "{{sheet.idName}}",buf)
 		{% endif -%}
 		if err != nil {
 			return nil, err
@@ -55,8 +55,8 @@ func NewTables(loadFromFile LoadFromFileCallback) (*Tables, error) {
 		{% if sheet.singleton -%}
 		err = tables.{{sheet.instName}}.DeserializeFromBinary(buf)
 		{% else -%}
-		tables.{{sheet.instName}} = make(map[{{sheet.keyTypename}}]*{{sheet.className}},0)
-		err = DeserializeTableFromBinary(tables.{{sheet.instName}}, "{{sheet.keyName}}",buf)
+		tables.{{sheet.instName}} = make(map[{{sheet.idTypename}}]*{{sheet.className}},0)
+		err = DeserializeTableFromBinary(tables.{{sheet.instName}}, "{{sheet.idName}}",buf)
 		{% endif -%}
 		if err != nil {
 			return nil, err
@@ -66,7 +66,7 @@ func NewTables(loadFromFile LoadFromFileCallback) (*Tables, error) {
 	return tables,nil
 }
 
-func DeserializeTableFromJson[K comparable, P any, V ~*P](table map[K]V, keyName string, buf []byte) error {
+func DeserializeTableFromJson[K comparable, P any, V ~*P](table map[K]V, idName string, buf []byte) error {
 	jsonData := make([]map[string]any, 0)
 	if err := json.Unmarshal(buf, &jsonData); err != nil {
 		return err
@@ -83,13 +83,13 @@ func DeserializeTableFromJson[K comparable, P any, V ~*P](table map[K]V, keyName
 		if len(results) > 0 && !results[0].IsNil() {
 			return results[0].Interface().(error)
 		}
-		key := v.FieldByName(keyName).Interface().(K)
+		key := v.FieldByName(idName).Interface().(K)
 		table[key] = vPtr.Interface().(V)
 	}
 	return nil
 }
 
-func DeserializeTableFromBinary[K comparable, P any, V ~*P](table map[K]V, keyName string, buf []byte) error {
+func DeserializeTableFromBinary[K comparable, P any, V ~*P](table map[K]V, idName string, buf []byte) error {
 	bs := NewByteStream(buf)
 	count,err := bs.ReadUInt16()
 	if err != nil {
@@ -106,7 +106,7 @@ func DeserializeTableFromBinary[K comparable, P any, V ~*P](table map[K]V, keyNa
 		if len(results) > 0 && !results[0].IsNil() {
 			return results[0].Interface().(error)
 		}
-		key := v.FieldByName(keyName).Interface().(K)
+		key := v.FieldByName(idName).Interface().(K)
 		table[key] = vPtr.Interface().(V)
 	}
 	return nil

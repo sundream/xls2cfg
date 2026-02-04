@@ -464,25 +464,26 @@ class Sheet(object):
             return
         for i,row in enumerate(self.rows):
             for j,value in enumerate(row):
-                ref = self.getConstraint(j,"ref")
-                if ref:
-                    refList = ref.split("-")
-                    if len(refList) != 2:
-                        raise Exception(self.message(i,j,"reference constraint expire format 'ref=refFilename-refColname',but got value='%s'" % ref))
-                    refFilename,refColname = refList
-                    refSheet = self.getSheet(refFilename)
-                    if refSheet is None:
-                        raise Exception(self.message(i,j,"reference's excel not exist,refFilename=%s,refColname=%s" % (refFilename,refColname)))
-                    refSheetCol = refSheet.key2col.get(refColname)
-                    if refSheetCol is None:
-                        raise Exception(self.message(i,j,"reference's column not exist,refFilename=%s,refColname=%s" % (refFilename,refColname)))
-                    ok = False
-                    for refRow in refSheet.rows:
-                        if value == refRow[refSheetCol]:
-                            ok = True
-                            break
-                    if not ok:
-                        raise Exception(self.message(i,j,"reference's value not exist,refFilename=%s,refColname=%s" % (refFilename,refColname)))
+                if value:
+                    ref = self.getConstraint(j,"ref")
+                    if ref:
+                        refList = ref.split(".")
+                        if len(refList) != 2:
+                            raise Exception(self.message(i,j,"reference constraint expire format 'ref=refFilename.refColname',but got value='%s'" % ref))
+                        refFilename,refColname = refList
+                        refSheet = self.getSheet(refFilename)
+                        if refSheet is None:
+                            raise Exception(self.message(i,j,"reference's excel not exist,refFilename=%s,refColname=%s" % (refFilename,refColname)))
+                        refSheetCol = refSheet.key2col.get(refColname)
+                        if refSheetCol is None:
+                            raise Exception(self.message(i,j,"reference's column not exist,refFilename=%s,refColname=%s" % (refFilename,refColname)))
+                        ok = False
+                        for refRow in refSheet.rows:
+                            if value == refRow[refSheetCol]:
+                                ok = True
+                                break
+                        if not ok:
+                            raise Exception(self.message(i,j,"reference's value not exist,refFilename=%s,refColname=%s" % (refFilename,refColname)))
 
     def mergeFrom(self,fromSheet):
         for row in fromSheet.rows:

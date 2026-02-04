@@ -177,7 +177,7 @@
     - 格式: limit=[值 1,值 2,值 3]
   - ref
     - 引用表的某列字段
-    - 格式: ref=表名-字段名
+    - 格式: ref=表名.字段名
   - unique
     - 唯一性约束,其中第一列(id 列)固定带 unique 约束,另外 unique 列自带 not_null 约束
   - convert

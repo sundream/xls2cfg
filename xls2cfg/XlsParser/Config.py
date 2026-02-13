@@ -1,8 +1,8 @@
 #conding: utf-8
 
 class Config(object):
-    genSchema = False               # true=生成字段备注
-    genSchemaDetail = False         # true=生成详细字段备注(包含excel中的注释)
+    genMeta = False               # true=生成字段备注
+    genMetaDetail = False         # true=生成详细字段备注(包含excel中的注释)
     pretty = True                   # true=美化输出
     tags = []                       # 导出的标签列表,[]=导出所有标签,否则仅导出列表内的标签
     defaults = {}                   # 类型默认值字典: 类型名 -> 默认值

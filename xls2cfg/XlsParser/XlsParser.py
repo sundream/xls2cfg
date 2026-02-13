@@ -23,10 +23,10 @@ class XlsParser(object):
 
     def write(self,filename,data):
         self._write(filename,data)
-        if Config.genSchema:
-            self.writeSchema(filename)
+        if Config.genMeta:
+            self.writeMeta(filename)
 
-    def writeSchema(self,filename):
+    def writeMeta(self,filename):
         pass
 
     def _write(self,filename,data):
@@ -76,7 +76,7 @@ class XlsParser(object):
             fieldTypename = self.sheet.col2type[col].fullTypename
             fieldName = self.sheet.col2key[col]
             fieldComment = self.sheet.col2desc[col]
-            if Config.genSchemaDetail:
+            if Config.genMetaDetail:
                 comment = self.sheet.col2comment[col]
                 if comment:
                     fieldComment = fieldComment +"(" + comment + ")"

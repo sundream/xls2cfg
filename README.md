@@ -36,14 +36,14 @@
 - output
   - 必填
   - 含义: 输出路径(生成配置路径)
-- genSchema
+- genMeta
   - 可选
   - 含义: 是否输出类型注解(对lua等脚本语言有用)
-  - 格式: genSchema = true/false
-- genSchemaDetail
+  - 格式: genMeta = true/false
+- genMetaDetail
   - 可选
   - 含义: 输出的类型字段备注是否包含excel中注释信息
-  - 格式: genSchemaDetail = true/false
+  - 格式: genMetaDetail = true/false
 - outputFormats
   - 可选
   - 含义: 输出格式列表,支持 lua/luacvs/go/csharp/py/json/binary

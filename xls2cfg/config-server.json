@@ -28,8 +28,8 @@
         "elseif",
         "elif"
     ],
-    "genSchema": true,
-    "genSchemaDetail": true,
+    "genMeta": true,
+    "genMetaDetail": true,
     "i18nDirectory": "../Output/I18N",
     "i18nLanguage": "zh_CN",
     "i18nExtension": ".po",

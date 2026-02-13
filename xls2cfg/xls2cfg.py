@@ -71,10 +71,10 @@ e.g:
     i18nSeperator = jsonConfig.get("i18nSeperator") or "<:>"
     exclude = jsonConfig.get("exclude") or []
 
-    if "genSchema" in jsonConfig:
-        Config.genSchema = jsonConfig.get("genSchema")
-    if "genSchemaDetail" in jsonConfig:
-        Config.genSchemaDetail = jsonConfig.get("genSchemaDetail")
+    if "genMeta" in jsonConfig:
+        Config.genMeta = jsonConfig.get("genMeta")
+    if "genMetaDetail" in jsonConfig:
+        Config.genMetaDetail = jsonConfig.get("genMetaDetail")
     if "pretty" in jsonConfig:
         Config.pretty = jsonConfig.get("pretty")
     if "defaults" in jsonConfig:
@@ -95,7 +95,7 @@ e.g:
         keywords = jsonConfig.get("keywords") or []
         Config.keywords = dict.fromkeys(keywords,True)
 
-    # print(inputDir,outputDir,outputFormats,Config.genSchema,Config.genSchemaDetail,i18nDirectory,i18nLanguage,i18nExportOneFile,i18nExtension,Config.pretty,exclude,Config.classNameFirstUpper,Config.localize)
+    # print(inputDir,outputDir,outputFormats,Config.genMeta,Config.genMetaDetail,i18nDirectory,i18nLanguage,i18nExportOneFile,i18nExtension,Config.pretty,exclude,Config.classNameFirstUpper,Config.localize)
     # 载入本地化文本
     if i18nLanguage:
         readI18nFile(i18nExportOneFile,i18nDirectory,i18nLanguage,i18nExtension,i18nSeperator)

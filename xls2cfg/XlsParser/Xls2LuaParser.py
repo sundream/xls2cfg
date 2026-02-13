@@ -129,7 +129,7 @@ class Xls2LuaParser(XlsParser):
         result.append('}')
         return result
 
-    def writeSchema(self,filename):
+    def writeMeta(self,filename):
         codeComment = self.codeComment
         lines = []
         if self.type.comment:

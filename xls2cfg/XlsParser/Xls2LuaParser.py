@@ -129,7 +129,7 @@ class Xls2LuaParser(XlsParser):
         result.append('}')
         return result
 
-    def writeMeta(self,filename):
+    def formatMeta(self):
         codeComment = self.codeComment
         lines = []
         if self.type.comment:
@@ -137,7 +137,5 @@ class Xls2LuaParser(XlsParser):
         lines.append("%s@class Cfg.%s" % (codeComment,self.type.fullTypename))
         for field in self.type.fields:
             lines.append("%s@field %-48s%-32s%s" % (codeComment,field.name,field.type.fullTypename,field.comment))
-        data = "\n".join(lines) + "\n\n"
-        filename = os.path.join("meta",filename)
-        self._write(filename,data)
-
+        data = "\n".join(lines)
+        return data

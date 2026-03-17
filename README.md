@@ -16,6 +16,10 @@
 
 [Back to TOC](#table-of-contents)
 
+## 初始化环境
+
+双击 init.bat
+
 ## 用法
 
 双击 gen.bat
@@ -44,6 +48,10 @@
   - 可选
   - 含义: 输出的类型字段备注是否包含excel中注释信息
   - 格式: genMetaDetail = true/false
+- genMetaHeader
+  - 可选
+  - 含义: 输出的类型注解不独立生成文件,而是放到lua文件头
+  - 格式: genMetaHeader = true/false
 - outputFormats
   - 可选
   - 含义: 输出格式列表,支持 lua/luacvs/go/csharp/py/json/binary
@@ -53,7 +61,7 @@
   - 格式: defaults = {"类型名":默认值}
 - tags
   - 可选
-  - 含义: [导出的 tag 列,不填所有列都导出,比如可以自定义 client/server 等 tag]
+  - 含义: [导出的 tag 列,不填所有列都导出,比如可以自定义 c代表客户端,s代表服务器 等 tag, 不填默认归属所有tag]
   - 格式: tags=[tag1,tag2,tag3,...]
 - i18nDirectory
   - 可选
@@ -149,7 +157,7 @@
   - 32 位掩码类型,数据格式固定为: [0,1,2],最终结果会自动转换为 int32,值为 2^0+2^1+2^2
   - 别名: bit
 - bit64
-  - 64 位掩码类型,数据格式固定为: [0,1,2],最终结果会自动转换为 int64,值为 2^0+2^1+2^2
+  - 64 位掩码类型,数据格式固定为: [0,1,2],最终结果会自动转换为 int32,值为 2^0+2^1+2^2
 - json
   - json 类型
 - list

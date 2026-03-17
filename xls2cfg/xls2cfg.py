@@ -75,6 +75,8 @@ e.g:
         Config.genMeta = jsonConfig.get("genMeta")
     if "genMetaDetail" in jsonConfig:
         Config.genMetaDetail = jsonConfig.get("genMetaDetail")
+    if "genMetaHeader" in jsonConfig:
+        Config.genMetaHeader = jsonConfig.get("genMetaHeader")
     if "pretty" in jsonConfig:
         Config.pretty = jsonConfig.get("pretty")
     if "defaults" in jsonConfig:

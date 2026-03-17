@@ -22,12 +22,20 @@ class XlsParser(object):
         self.buildData()
 
     def write(self,filename,data):
+        if Config.genMetaHeader:
+            meta = self.formatMeta()
+            data = meta + "\n\n" + data
         self._write(filename,data)
-        if Config.genMeta:
+        if Config.genMeta and not Config.genMetaHeader:
             self.writeMeta(filename)
 
-    def writeMeta(self,filename):
+    def formatMeta(self):
         pass
+
+    def writeMeta(self,filename):
+        data = self.formatMeta()
+        filename = os.path.join("meta",filename)
+        self._write(filename,data)
 
     def _write(self,filename,data):
         output = self.output

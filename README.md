@@ -155,7 +155,7 @@
 - json
   - json 类型
 - list
-  - 动态数组
+  - 列表
   - 格式: list `<type>`,其中 type 为元素类型,支持嵌套
 - map
   - 字典
@@ -230,7 +230,7 @@
 - excel 示例配置
   - 多行表: Excel/template@模板.xlsx
     ![image](images/template.png)
-  - 单例表: Excel/var@变量.xlsx
+  - 单例表: Excel/const@变量.xlsx
     ![image](images/const.png)
   - 单个excel根据sheet名导出多份数据，以下表会导出entity_hero和entity_monster数据
     ![image](images/entity.png)

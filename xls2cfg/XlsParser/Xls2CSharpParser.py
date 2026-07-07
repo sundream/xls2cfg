@@ -185,6 +185,8 @@ class Xls2CSharpParser(XlsParser):
     @classmethod
     def endParse(cls,outputPath):
         cls.writeAllClass(outputPath)
+        if cls.ignoreGenTables:
+            return
         sheets = getSheets()
         context = {
             "namespace" : Config.namespace,

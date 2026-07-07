@@ -130,6 +130,8 @@ class Xls2GoParser(XlsParser):
     @classmethod
     def endParse(cls,outputPath):
         cls.writeAllClass(outputPath)
+        if cls.ignoreGenTables:
+            return
         sheets = getSheets()
         context = {
             "namespace" : cls.formatNamespace(Config.namespace),

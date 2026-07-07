@@ -11,6 +11,7 @@ class XlsParser(object):
     indent = Config.indent      # 缩进符
     codeComment = None          # 代码注释符
     extension = None            # 扩展名
+    ignoreGenTables = False     # 忽略生成Tables文件
 
     def __init__(self,sheet,output):
         self.sheet = sheet

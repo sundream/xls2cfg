@@ -9,6 +9,7 @@ import optparse
 import os
 import json
 import subprocess
+from XlsParser.XlsParser import XlsParser
 from XlsParser.Xls2PyParser import Xls2PyParser
 from XlsParser.Xls2LuaParser import Xls2LuaParser
 from XlsParser.Xls2LuaCvsParser import Xls2LuaCvsParser
@@ -96,6 +97,8 @@ e.g:
     if "keywords" in jsonConfig:
         keywords = jsonConfig.get("keywords") or []
         Config.keywords = dict.fromkeys(keywords,True)
+    if "maxCol" in jsonConfig:
+        Config.maxCol = jsonConfig.get("maxCol")
 
     # print(inputDir,outputDir,outputFormats,Config.genMeta,Config.genMetaDetail,i18nDirectory,i18nLanguage,i18nExportOneFile,i18nExtension,Config.pretty,exclude,Config.classNameFirstUpper,Config.localize)
     # 载入本地化文本
@@ -160,6 +163,8 @@ e.g:
                     if fromSheet != None:
                         sheets.pop(fromFileName)
                         toSheet.mergeFrom(fromSheet)
+
+    XlsParser.ignoreGenTables = onlyExportChange
     for outputFormat in outputFormats:
         print("xls2cfg,outputDir=%s,outputFormat=%s" % (outputDir,outputFormat))
         if outputFormat == "lua":

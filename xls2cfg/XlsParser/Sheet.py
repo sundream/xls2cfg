@@ -3,6 +3,7 @@
 #@date 2025-09-10
 
 import os
+import time
 from openpyxl.utils import get_column_letter
 from XlsParser.CheckType import toValue
 from XlsParser.Type import Type
@@ -87,6 +88,10 @@ class Sheet(object):
                         else:
                             self.col2tags[j] = ["__ignore"]
             break
+        self._loadStartTime = time.perf_counter()
+        print("loadSheetBegin,xlsFilename=%s,sheetName=%s" % (self.xlsFilename,self.sheetName))
+        if self.maxCol > Config.maxCol:
+            raise Exception("maxCol=%d > Config.maxCol=%d" % (self.maxCol,Config.maxCol))
         if self.singleton:
             self.initSingletonSheet()
             return
@@ -94,6 +99,8 @@ class Sheet(object):
         for mergedCell in self.sheet.merged_cells.ranges:
             # 1-based
             startCol,startRow,endCol,endRow = mergedCell.bounds
+            if startCol > self.maxCol:
+                continue
             assert(startRow == endRow)
             if startRow > 3:
                 raise("mergeCell only allow in first 3 rows")
@@ -333,10 +340,13 @@ class Sheet(object):
                 else:
                     line.append(value)
 
-        print("loadSheet,xlsFilename=%s,sheetName=%s,maxRow=%d,maxCol=%d,dataRow=%d" % (self.xlsFilename,self.sheetName,self.maxRow,self.maxCol,self.dataRow))
+        elapsedMs = (time.perf_counter() - self._loadStartTime) * 1000
+        print("loadSheetEnd,xlsFilename=%s,sheetName=%s,maxRow=%d,maxCol=%d,dataRow=%d,elapsedMs=%.2fms" % (self.xlsFilename,self.sheetName,self.maxRow,self.maxCol,self.dataRow,elapsedMs))
 
     def initSingletonSheet(self):
         # 首行为表头行,固定名字为: key | type | value | tags | desc
+        self._loadStartTime = time.perf_counter()
+        print("loadSingleSheetBegin,xlsFilename=%s,sheetName=%s" % (self.xlsFilename,self.sheetName))
         self.headerRow = 1
         self.header = {}            # col -> keyword
         for row in self.sheet.iter_rows(min_row=1,max_row=self.headerRow):
@@ -401,7 +411,8 @@ class Sheet(object):
         self.dataRow = 1
         self.maxCol = self.maxRow
         self.maxRow = self.headerRow + 1    # 1 row
-        print("loadSingletonSheet,xlsFilename=%s,sheetName=%s,maxRow=%d,maxCol=%d,dataRow=%d" % (self.xlsFilename,self.sheetName,self.maxRow,self.maxCol,self.dataRow))
+        elapsedMs = (time.perf_counter() - self._loadStartTime) * 1000
+        print("loadSingleSheetEnd,xlsFilename=%s,sheetName=%s,maxRow=%d,maxCol=%d,dataRow=%d,elapsedMs=%.2fms" % (self.xlsFilename,self.sheetName,self.maxRow,self.maxCol,self.dataRow,elapsedMs))
 
 
     def message(self,row,col,msg):

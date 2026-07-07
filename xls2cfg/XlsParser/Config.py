@@ -14,6 +14,7 @@ class Config(object):
     indent = "    ";                # 缩进符
     localize = False                # true=国际化文本导出成目标语言
     keywords = {}                   # 关键字
+    maxCol = 256                    # 最大列数
 
     @staticmethod
     def isNeedExportTags(tags):

@@ -8,6 +8,8 @@ import io
 import string
 import json
 import re
+from datetime import datetime, timezone
+import time
 
 def _readI18nTxtFile(filename,i18nSeperator,dictTexts):
     if not os.path.exists(filename):
@@ -61,34 +63,57 @@ def _readI18nLuaFile(filename,dictTexts):
 
 def _readI18nPoFile(filename,dictTexts):
     if not os.path.exists(filename):
-        return []
+        return [], {}
     texts = []
+    header = {}
     fd = open(filename,"rb")
     if not fd:
         raise Exception("file not exists: " + filename)
     msgid = None
     msgstr = None
     comment = None
+    curmsg = None
+    def endMsg():
+        nonlocal msgid,msgstr,comment,curmsg
+        if msgstr is None:
+            return
+        if msgid and msgid != "" and dictTexts.get(msgid) is None:
+            elem = [msgid,msgstr,comment]
+            texts.append(elem)
+            dictTexts[msgid] = elem
+            # print("endMsg", comment, msgid, msgstr)
+        msgid = None
+        msgstr = None
+        comment = None
+        curmsg = None
     for line in fd.read().splitlines():
         line = line.decode()
         length = len(line)
+        if length > 0 and line[0] != '"':
+            endMsg()
         if line.startswith("#: "):
             comment = line[3:]
+            curmsg = 0
         elif line[0:6] == "msgid ":
             if msgid:
                 raise Exception("invalid format,i18nInputFile=%s" % filename)
             msgid = line[7:length-1]
+            curmsg = 1
         elif line[0:7] == "msgstr ":
-            if not msgid:
+            if msgid is None:
                 raise Exception("invalid format,i18nInputFile=%s" % filename)
             msgstr = line[8:length-1]
-            if msgid != "" and dictTexts.get(msgid) is None:
-                elem = [msgid,msgstr,comment]
-                texts.append(elem)
-                dictTexts[msgid] = elem
-            msgid = None
-            comment = None
-    return texts
+            curmsg = 2
+        elif line.startswith('"') and line.endswith('"'):
+            if curmsg == 1:
+                msgid = msgid + line[1:length-1]
+            elif curmsg == 2:
+                msgstr = msgstr + line[1:length-1]
+                if line.find("POT-Creation-Date") >= 0:
+                    header["POT-Creation-Date"] = line
+    endMsg()
+    fd.close()
+    return texts, header
 
 def _writeI18nTxtFile(filename,newDictTexts,i18nSeperator):
     change = False
@@ -179,7 +204,7 @@ def _writeI18nLuaFile(filename,newDictTexts):
 def _writeI18nPoFile(filename,newDictTexts):
     change = False
     oldDictTexts = {}
-    oldTexts = _readI18nPoFile(filename,oldDictTexts)
+    oldTexts, header = _readI18nPoFile(filename,oldDictTexts)
     dictTexts = {}
     for k,elem in newDictTexts.items():
         oldElem = oldDictTexts.get(k)
@@ -203,6 +228,23 @@ def _writeI18nPoFile(filename,newDictTexts):
         k = listTexts[i]
         oldTexts.append([k,dictTexts[k][1],dictTexts[k][2]])
     lines = []
+    # add header
+    lines.append('msgid ""\nmsgstr ""')
+    lines.append('"Project-Id-Version: \\n"')
+    curr_time = datetime.now().strftime("%Y-%m-%d %H:%M") + time.strftime('%z')
+    if header.get("POT-Creation-Date"):
+        lines.append(header["POT-Creation-Date"])
+    else:
+        lines.append('"POT-Creation-Date: %s\\n"' % curr_time)
+    lines.append('"PO-Revision-Date: %s\\n"' % curr_time)
+    lines.append('"Last-Translator: \\n"')
+    lines.append('"Language-Team: \\n"')
+    basename = os.path.basename(filename)
+    name, _ = os.path.splitext(basename)
+    lines.append('"Language: %s\\n"' % name)
+    lines.append('"MIME-Version: 1.0\\n"')
+    lines.append('"Content-Type: text/plain; charset=UTF-8\\n"')
+    lines.append('"Content-Transfer-Encoding: 8bit\\n"\n')
     for elem in oldTexts:
         k = elem[0]
         v = elem[1]

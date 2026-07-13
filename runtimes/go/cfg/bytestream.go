@@ -96,8 +96,9 @@ func (bs *ByteStream) WritebigInt(value big.Int) {
 }
 
 func (bs *ByteStream) WriteFloat32(value float32) {
-	number := int64(float64(value) * math.Pow10(5))
-	bs.WriteInt64(number)
+	var buf [4]byte
+	binary.LittleEndian.PutUint32(buf[:], math.Float32bits(value))
+	bs.buffer.Write(buf[:])
 }
 
 func (bs *ByteStream) WriteFloat(value float32) {
@@ -105,8 +106,9 @@ func (bs *ByteStream) WriteFloat(value float32) {
 }
 
 func (bs *ByteStream) WriteFloat64(value float64) {
-	number := int64(float64(value) * math.Pow10(8))
-	bs.WriteInt64(number)
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:], math.Float64bits(value))
+	bs.buffer.Write(buf[:])
 }
 
 func (bs *ByteStream) WriteDouble(value float64) {
@@ -217,11 +219,11 @@ func (bs *ByteStream) ReadbigInt() (big.Int, error) {
 }
 
 func (bs *ByteStream) ReadFloat32() (float32, error) {
-	number, err := bs.ReadInt64()
-	if err != nil {
+	var buf [4]byte
+	if _, err := io.ReadFull(bs.buffer, buf[:]); err != nil {
 		return 0, err
 	}
-	return float32(float64(number) / math.Pow10(5)), nil
+	return math.Float32frombits(binary.LittleEndian.Uint32(buf[:])), nil
 }
 
 func (bs *ByteStream) ReadFloat() (float32, error) {
@@ -229,11 +231,11 @@ func (bs *ByteStream) ReadFloat() (float32, error) {
 }
 
 func (bs *ByteStream) ReadFloat64() (float64, error) {
-	number, err := bs.ReadInt64()
-	if err != nil {
+	var buf [8]byte
+	if _, err := io.ReadFull(bs.buffer, buf[:]); err != nil {
 		return 0, err
 	}
-	return float64(number) / math.Pow10(8), nil
+	return math.Float64frombits(binary.LittleEndian.Uint64(buf[:])), nil
 }
 
 func (bs *ByteStream) ReadDouble() (float64, error) {

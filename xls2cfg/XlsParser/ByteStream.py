@@ -79,13 +79,11 @@ class ByteStream:
     def WriteBigInt(self,value):
         self.WriteString(value)
 
-    def WriteFloat(self, value, power=5):
-        num = int(value * (10 ** power))
-        self.WriteInt64(num)
+    def WriteFloat(self, value):
+        self.Write(struct.pack('<f', float(value)), 0, 4)
 
-    def WriteDouble(self, value, power=8):
-        num = int(value * (10 ** power))
-        self.WriteInt64(num)
+    def WriteDouble(self, value):
+        self.Write(struct.pack('<d', float(value)), 0, 8)
 
     def WriteString(self, str):
         data = str.encode('utf-8')
@@ -158,13 +156,11 @@ class ByteStream:
     def ReadBigInt(self):
         return self.ReadString()
 
-    def ReadFloat(self, power=5):
-        num = self.ReadInt64()
-        return float(num) / (10 ** power)
+    def ReadFloat(self):
+        return struct.unpack('<f', self.ReadBytes(4))[0]
 
-    def ReadDouble(self, power=8):
-        num = self.ReadInt64()
-        return float(num) / (10 ** power)
+    def ReadDouble(self):
+        return struct.unpack('<d', self.ReadBytes(8))[0]
 
     def ReadString(self):
         length = self.ReadUInt16()

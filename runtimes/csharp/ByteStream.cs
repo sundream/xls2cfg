@@ -129,14 +129,20 @@ namespace Cfg {
             this.WriteBigInt(value.ToString());
         }
 
-        public void WriteFloat(float value,int power=5) {
-            Int64 number = (Int64)(value * Math.Pow(10,power));
-            this.WriteInt64(number);
+        public void WriteFloat(float value) {
+            byte[] bytes = BitConverter.GetBytes(value);
+            if (!BitConverter.IsLittleEndian) {
+                Array.Reverse(bytes);
+            }
+            this.Write(bytes, 0, bytes.Length);
         }
 
-        public void WriteDouble(double value,int power=8) {
-            Int64 number = (Int64)(value * Math.Pow(10,power));
-            this.WriteInt64(number);
+        public void WriteDouble(double value) {
+            byte[] bytes = BitConverter.GetBytes(value);
+            if (!BitConverter.IsLittleEndian) {
+                Array.Reverse(bytes);
+            }
+            this.Write(bytes, 0, bytes.Length);
         }
 
         public void WriteString(string str) {
@@ -238,14 +244,28 @@ namespace Cfg {
             return Convert.ToDecimal(this.ReadBigInt());
         }
 
-        public float ReadFloat(int power=5) {
-            Int64 number = this.ReadInt64();
-            return (float)number / (float)Math.Pow(10,power);
+        public float ReadFloat() {
+            int readPos = this.pos;
+            this.pos += 4;
+            if (!BitConverter.IsLittleEndian) {
+                byte[] bytes = new byte[4];
+                Array.Copy(this.buffer, readPos, bytes, 0, 4);
+                Array.Reverse(bytes);
+                return BitConverter.ToSingle(bytes, 0);
+            }
+            return BitConverter.ToSingle(this.buffer, readPos);
         }
 
-        public double ReadDouble(int power=8) {
-            Int64 number = this.ReadInt64();
-            return (double)number / (double)Math.Pow(10, power);
+        public double ReadDouble() {
+            int readPos = this.pos;
+            this.pos += 8;
+            if (!BitConverter.IsLittleEndian) {
+                byte[] bytes = new byte[8];
+                Array.Copy(this.buffer, readPos, bytes, 0, 8);
+                Array.Reverse(bytes);
+                return BitConverter.ToDouble(bytes, 0);
+            }
+            return BitConverter.ToDouble(this.buffer, readPos);
         }
 
         public string ReadString() {

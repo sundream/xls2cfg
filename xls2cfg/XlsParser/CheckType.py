@@ -270,9 +270,13 @@ def toValue(value,typ,options=None):
         if not ok:
             return False,"expect '%s',but got python type '%s',value=%s" % (typename,pythonType,value)
         if typename == "i18nstring":
-            setI18NText(escapeString(value),xlsFilename,"%s%s" % (get_column_letter(col+1),row+1))
+            escaped = escapeString(value)
+            setI18NText(escaped,xlsFilename,"%s%s" % (get_column_letter(col+1),row+1))
             if localize:
-                value = getLocalizeText(value) or value
+                # localizeTexts 的 key 与 po 中 msgid 一致，均为转义后的文本
+                localized = getLocalizeText(escaped)
+                if localized:
+                    value, _ = toString(localized)
     elif typename == "bit32":
         value,ok = toMask(value)
         if not ok or not isInt32(value):

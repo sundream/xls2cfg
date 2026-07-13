@@ -11,6 +11,23 @@ import re
 from datetime import datetime, timezone
 import time
 
+def _mergeComment(oldComment, newComment):
+    """合并引用位置注释，返回 (merged, changed)。"""
+    if not newComment:
+        return oldComment, False
+    if not oldComment:
+        return newComment, True
+    if oldComment == newComment:
+        return oldComment, False
+    parts = []
+    seen = set()
+    for part in (oldComment.split() + newComment.split()):
+        if part and part not in seen:
+            seen.add(part)
+            parts.append(part)
+    merged = " ".join(parts)
+    return merged, merged != oldComment
+
 def _readI18nTxtFile(filename,i18nSeperator,dictTexts):
     if not os.path.exists(filename):
         return []
@@ -123,10 +140,10 @@ def _writeI18nTxtFile(filename,newDictTexts,i18nSeperator):
     for k,elem in newDictTexts.items():
         oldElem = oldDictTexts.get(k)
         if oldElem:
-            if oldElem[2] != elem[2]:
-                # update comment
+            mergedComment, commentChanged = _mergeComment(oldElem[2], elem[2])
+            if commentChanged:
                 change = True
-                oldElem[2] = elem[2]
+                oldElem[2] = mergedComment
             if oldElem[1] == "" and elem[1] != "":
                 # merge text
                 change = True
@@ -166,10 +183,10 @@ def _writeI18nLuaFile(filename,newDictTexts):
     for k,elem in newDictTexts.items():
         oldElem = oldDictTexts.get(k)
         if oldElem:
-            if oldElem[2] != elem[2]:
-                # update comment
+            mergedComment, commentChanged = _mergeComment(oldElem[2], elem[2])
+            if commentChanged:
                 change = True
-                oldElem[2] = elem[2]
+                oldElem[2] = mergedComment
             if oldElem[1] == "" and elem[1] != "":
                 # merge text
                 change = True
@@ -209,10 +226,10 @@ def _writeI18nPoFile(filename,newDictTexts):
     for k,elem in newDictTexts.items():
         oldElem = oldDictTexts.get(k)
         if oldElem:
-            if oldElem[2] != elem[2]:
-                # update comment
+            mergedComment, commentChanged = _mergeComment(oldElem[2], elem[2])
+            if commentChanged:
                 change = True
-                oldElem[2] = elem[2]
+                oldElem[2] = mergedComment
             if oldElem[1] == "" and elem[1] != "":
                 # merge text
                 change = True
@@ -221,6 +238,7 @@ def _writeI18nPoFile(filename,newDictTexts):
             change = True
             dictTexts[k] = elem
     if not change:
+        # 文本与注释均无变化时不重写，避免仅刷新 Creation/Revision Date
         return
     listTexts = list(dictTexts.keys())
     listTexts.sort()
@@ -232,6 +250,7 @@ def _writeI18nPoFile(filename,newDictTexts):
     lines.append('msgid ""\nmsgstr ""')
     lines.append('"Project-Id-Version: \\n"')
     curr_time = datetime.now().strftime("%Y-%m-%d %H:%M") + time.strftime('%z')
+    # POT-Creation-Date 只在首次创建时写入，后续合并保留原值
     if header.get("POT-Creation-Date"):
         lines.append(header["POT-Creation-Date"])
     else:
@@ -276,7 +295,7 @@ def readI18nFile(i18nInputFilename,i18nSeperator,dictTexts):
     elif i18nExtension == ".lua":
         texts = _readI18nLuaFile(i18nInputFilename,dictTexts)
     elif i18nExtension == ".po":
-        texts = _readI18nPoFile(i18nInputFilename,dictTexts)
+        texts, _ = _readI18nPoFile(i18nInputFilename,dictTexts)
     return texts
 
 def writeI18nFile(texts,i18nOutputFilename,i18nSeperator):

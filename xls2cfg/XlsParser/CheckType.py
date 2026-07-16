@@ -63,13 +63,24 @@ def toBool(value):
     return value,False
 
 def toInt(value):
-    if type(value) != int:
-        try:
-            result = int(value)
-            return result,True
-        except Exception as e:
-            return value,False
-    return value,True
+    if type(value) == int:
+        return value,True
+    try:
+        if type(value) == float:
+            ivalue = int(value)
+            if value != ivalue:
+                return value,False
+            return ivalue,True
+        s = str(value).strip()
+        lower = s.lower()
+        # 0x/0X 十六进制，0b/0B 二进制（支持正负号）
+        if lower.startswith(("0x","0b","+0x","+0b","-0x","-0b")):
+            result = int(s,0)
+        else:
+            result = int(s)
+        return result,True
+    except Exception:
+        return value,False
 
 def toBigInt(value):
     if type(value) != str:

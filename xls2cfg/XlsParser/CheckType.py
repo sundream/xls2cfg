@@ -250,19 +250,19 @@ def toValue(value,typ,options=None):
             return False,"expect '%s',but got python type '%s',value=%s" % (typename,pythonType,value)
     elif typename == "uint8":
         value,ok = toInt(value)
-        if not ok or not isInt8(value):
+        if not ok or not isUInt8(value):
             return False,"expect '%s',but got python type '%s',value=%s" % (typename,pythonType,value)
     elif typename == "uint16":
         value,ok = toInt(value)
-        if not ok or not isInt16(value):
+        if not ok or not isUInt16(value):
             return False,"expect '%s',but got python type '%s',value=%s" % (typename,pythonType,value)
     elif typename == "uint32":
         value,ok = toInt(value)
-        if not ok or not isInt32(value):
+        if not ok or not isUInt32(value):
             return False,"expect '%s',but got python type '%s',value=%s" % (typename,pythonType,value)
     elif typename == "uint64":
         value,ok = toInt(value)
-        if not ok or not isInt64(value):
+        if not ok or not isUInt64(value):
             return False,"expect '%s',but got python type '%s',value=%s" % (typename,pythonType,value)
     elif typename == "bigint":
         value,ok = toBigInt(value)

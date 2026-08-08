@@ -62,6 +62,24 @@ def toBool(value):
         return bool(result),True
     return value,False
 
+# Integer types that may use Excel 0x/0b literals (bigint excluded).
+INT_BASE_TYPENAMES = frozenset({
+    "int8", "int16", "int32", "int64",
+    "uint8", "uint16", "uint32", "uint64",
+})
+
+
+def intLiteralBase(value):
+    """Return 16/2 if text is a hex/bin int literal (same prefix rules as toInt), else None."""
+    if type(value) != str:
+        return None
+    if value.startswith(("0x", "0X", "+0x", "+0X", "-0x", "-0X")):
+        return 16
+    if value.startswith(("0b", "0B", "+0b", "+0B", "-0b", "-0B")):
+        return 2
+    return None
+
+
 def toInt(value):
     if type(value) == int:
         return value,True
@@ -72,9 +90,8 @@ def toInt(value):
                 return value,False
             return ivalue,True
         s = str(value).strip()
-        lower = s.lower()
         # 0x/0X 十六进制，0b/0B 二进制（支持正负号）
-        if lower.startswith(("0x","0b","+0x","+0b","-0x","-0b")):
+        if intLiteralBase(s):
             result = int(s,0)
         else:
             result = int(s)

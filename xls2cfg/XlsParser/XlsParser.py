@@ -84,13 +84,16 @@ class XlsParser(object):
                 continue
             fieldTypename = self.sheet.col2type[col].fullTypename
             fieldName = self.sheet.col2key[col]
-            fieldComment = self.sheet.col2desc[col]
-            if Config.genMetaDetail:
-                comment = self.sheet.col2comment[col]
-                if comment:
-                    fieldComment = fieldComment +"(" + comment + ")"
+            comment = self.sheet.col2desc[col] or ""
+            remarks = self.sheet.col2comment[col] or ""
             fieldTags = self.sheet.col2tags[col]
-            idx = self.type.defineField(fieldTypename,fieldName,fieldComment,fieldTags)
+            idx = self.type.defineField(
+                fieldTypename,
+                fieldName,
+                comment=comment,
+                tags=fieldTags,
+                remarks=remarks,
+            )
             if not self.sheet.singleton and col == self.sheet.idCol:
                 self.type.setIdField(idx)
 
@@ -118,7 +121,7 @@ class XlsParser(object):
                 "_name": field.name,
                 "name": cls.formatFieldName(field.name),
                 "typename": cls.formatType(field.type),
-                "comment": field.comment,
+                "comment": field.codegen_comment(),
                 "index": field.index,
             })
         typ.context["fields"] = fields

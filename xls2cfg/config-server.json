@@ -1,7 +1,7 @@
 {
     "input": "../Excel",
     "output": "../Output/Server",
-    "outputFormats": ["lua","go","binary","json"],
+    "outputFormats": ["binary","json","schema","csharp","go","lua"],
     "keywords": [
         "int",
         "int8",

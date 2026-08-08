@@ -5,7 +5,7 @@
 import os
 import time
 from openpyxl.utils import get_column_letter
-from XlsParser.CheckType import toValue
+from XlsParser.CheckType import toValue, intLiteralBase, INT_BASE_TYPENAMES
 from XlsParser.Type import Type
 from XlsParser import Convert
 from XlsParser.Config import Config
@@ -15,6 +15,32 @@ sheets = {}
 
 def getSheets():
     return sheets
+
+
+def split_at_display(title):
+    """Split 'name@displayName' → (name, displayName|None)."""
+    if title is None:
+        return None, None
+    s = str(title)
+    if "@" in s:
+        name, disp = s.split("@", 1)
+        name = name.strip()
+        disp = disp.strip()
+        return name, disp if disp else None
+    return s, None
+
+
+def is_importable_sheet_title(sheet_title):
+    """Skip internal sheets; allow SheetName@中文显示名 (ascii check on name only)."""
+    logical, _ = split_at_display(sheet_title)
+    if not logical:
+        return False
+    if logical.startswith("_") or logical.startswith("Sheet"):
+        return False
+    if not logical.isascii():
+        return False
+    return True
+
 
 class MergeCell(object):
     # list<any> 和 map<string,any>类型允许拆分单元格填值
@@ -31,18 +57,21 @@ class MergeCell(object):
             self.fieldCount = len(self.type.valueType.fields)
 
 class Sheet(object):
-    def __init__(self,sheet,xlsFilename,sheetName):
-        self.xlsFilename = xlsFilename
-        self.sheetName = sheetName
-        fileNameList = self.xlsFilename.split("@")
-        if len(fileNameList) == 1:
-            self.filename = os.path.splitext(fileNameList[0])[0]
-            self.comment = None
+    def __init__(self,sheet,xlsFilename,sheetName,sheetIndex=0):
+        self.xlsFilename = os.path.basename(xlsFilename)
+        self.sheetIndex = sheetIndex
+        # sheet title may be SheetName@DisplayName
+        self.sheetName, self.sheetDisplayName = split_at_display(sheetName)
+        fileStem, workbookDisplay = split_at_display(os.path.splitext(self.xlsFilename)[0])
+        self.workbookName = fileStem
+        self.workbookDisplayName = workbookDisplay
+        # legacy: comment = workbook display (file @ part)
+        self.comment = workbookDisplay
+        # logical table name / output stem
+        if self.sheetName == "data":
+            self.filename = self.workbookName
         else:
-            self.filename = fileNameList[0]
-            self.comment = os.path.splitext(fileNameList[1])[0]
-        if sheetName != "data":
-            self.filename = self.filename + "_" + sheetName
+            self.filename = self.workbookName + "_" + self.sheetName
         self.defaults = deepcopy(Config.defaults)
         for k,v in Type.basicTypes.items():
             if not self.defaults.get(k):
@@ -71,6 +100,7 @@ class Sheet(object):
         self.dataRow = 0                # 有效数据行数(不包括表头行)
         self.mergeCells = {}            # 列号 -> 合并单元格信息{col: 合并到单元格的列号, type: 类型, count=合并单元格数, mapkeys=固定key字典}
         self.col2mapkey = {}            # 列号 -> mapkey
+        self.col2intBase = {}           # 列号 -> 16/2（整列统一进制，字段级）
         if self.sheet == None:
             return
         self.maxRow = self.sheet.max_row
@@ -116,14 +146,15 @@ class Sheet(object):
             for j in range(0,self.maxCol):
                 cell = row[j]
                 if i == 1:
+                    # Keep newlines for schema round-trip; genMeta flattens later.
                     if cell.value is None:
                         self.col2desc[j] = None
                     else:
-                        self.col2desc[j] = cell.value.replace('\n',' ')
+                        self.col2desc[j] = cell.value
                     if cell.comment is None:
                         self.col2comment[j] = None
                     else:
-                        self.col2comment[j] = cell.comment.text.replace('\n',' ')
+                        self.col2comment[j] = cell.comment.text
                 elif i == 2:
                     name = cell.value
                     if name is not None:
@@ -249,6 +280,15 @@ class Sheet(object):
             self.dataRow = self.dataRow + 1
             line = []
             self.rows.append(line)
+            # intBase：仅看首个数据行（与 toInt 相同的 0x/0b 规则；不含 bigint）
+            if self.dataRow == 1:
+                for j in range(0, self.maxCol):
+                    typ = self.getColType(j)
+                    if typ is None or typ.typename not in INT_BASE_TYPENAMES:
+                        continue
+                    base = intLiteralBase(row[j])
+                    if base:
+                        self.col2intBase[j] = base
             # 约束检查
             for j in range(0,self.maxCol):
                 value = row[j]
@@ -395,6 +435,10 @@ class Sheet(object):
                 elif self.header[j] == "value":
                     if value is None:
                         value = self.getDefault(j,i)
+                    if typ is not None and typ.typename in INT_BASE_TYPENAMES:
+                        base = intLiteralBase(value)
+                        if base:
+                            self.col2intBase[i] = base
                     ok,value = toValue(value,typ)
                     if not ok:
                         errMsg = value
@@ -510,7 +554,11 @@ class Sheet(object):
             val = row[self.splitCol]
             sheet = sheetDict.get(val)
             if sheet is None:
-                sheet = Sheet(None,self.xlsFilename,self.sheetName)
+                sheet = Sheet(None,self.xlsFilename,self.sheetName,self.sheetIndex)
+                sheet.sheetDisplayName = self.sheetDisplayName
+                sheet.workbookName = self.workbookName
+                sheet.workbookDisplayName = self.workbookDisplayName
+                sheet.comment = self.comment
                 sheet.idCol = self.splitIdCol
                 # 复制属性
                 sheet.col2desc = self.col2desc
@@ -526,6 +574,7 @@ class Sheet(object):
                 sheet.maxCol = self.maxCol
                 sheet.mergeCells = self.mergeCells
                 sheet.col2mapkey = self.col2mapkey
+                sheet.col2intBase = self.col2intBase
 
                 sheet.filename += "_" + str(val)
                 sheetDict[val] = sheet

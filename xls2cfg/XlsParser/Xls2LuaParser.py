@@ -136,6 +136,6 @@ class Xls2LuaParser(XlsParser):
             lines.append("%s%s" % (codeComment,self.type.comment))
         lines.append("%s@class Cfg.%s" % (codeComment,self.type.fullTypename))
         for field in self.type.fields:
-            lines.append("%s@field %-48s%-32s%s" % (codeComment,field.name,field.type.fullTypename,field.comment))
+            lines.append("%s@field %-48s%-32s%s" % (codeComment,field.name,field.type.fullTypename,field.codegen_comment()))
         data = "\n".join(lines)
         return data

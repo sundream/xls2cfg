@@ -37,21 +37,31 @@ def createBuiltinClass():
     ])
 
 def readClass(excelDir):
+    """Load __class__.xlsx from excelDir into Type registry.
+
+    Returns list of loaded class type names (empty if file missing).
+    """
     filename = os.path.join(excelDir,"__class__.xlsx")
     if not os.path.exists(filename):
-        return
+        return []
     createBuiltinClass()
     sheetName = "data"
     wb = load_workbook(filename = filename,data_only=True)
-    sheet = Sheet(wb[sheetName],filename,sheetName)
-    for row in sheet.rows:
-        typename = row[0]
-        comment = row[1]
-        fields = row[2]
-        for j in range(len(fields)-1,-1,-1):
-            if fields[j]["type"] == '' or not Config.isNeedExportTags(fields[j]["tags"]):
-                fields.pop(j)
-        if len(fields) > 0:
-            typ = Type.createClass(typename,fields)
-            if comment:
-                typ.comment = comment
+    loaded = []
+    try:
+        sheet = Sheet(wb[sheetName],filename,sheetName)
+        for row in sheet.rows:
+            typename = row[0]
+            comment = row[1]
+            fields = row[2]
+            for j in range(len(fields)-1,-1,-1):
+                if fields[j]["type"] == '' or not Config.isNeedExportTags(fields[j]["tags"]):
+                    fields.pop(j)
+            if len(fields) > 0:
+                typ = Type.createClass(typename,fields)
+                if comment:
+                    typ.comment = comment
+                loaded.append(typename)
+    finally:
+        wb.close()
+    return loaded

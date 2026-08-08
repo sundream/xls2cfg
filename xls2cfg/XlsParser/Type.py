@@ -79,7 +79,7 @@ class Type(object):
 
     #@brief 创建类
     #@param className string 类名
-    #@param fields list<Field> 字段列表
+    #@param fields list<field dict> 字段列表
     #@return Type 类
     @staticmethod
     def createClass(className,fields=None):
@@ -87,7 +87,13 @@ class Type(object):
         typ = Type.create(className)
         if fields:
             for field in fields:
-                typ.defineField(field["type"],field["name"],field["comment"],field["tags"])
+                typ.defineField(
+                    field["type"],
+                    field["name"],
+                    comment=field.get("comment"),
+                    tags=field.get("tags"),
+                    remarks=field.get("remarks"),
+                )
         return typ
 
     def __init__(self,fullTypename):
@@ -97,7 +103,7 @@ class Type(object):
         self.valueType = None                       # 值类型(list/map类型有用)
         self.fields = None                          # 类的域定义列表
         self.idFieldIdx = -1                        # id域索引
-        self.comment = None                         # 类型备注
+        self.comment = None                         # 类型备注 / 表 displayName
         self.__fromString(fullTypename)
         self.singleton = False                      # true=单例类型
 
@@ -140,15 +146,21 @@ class Type(object):
         else:
             if typename not in Type.types:
                 raise Exception("invalid type: %s" % fullTypename)
-        self.fullTypename = fullTypename
         self.typename = typename
         self.keyType = keyType
         self.valueType = valueType
+        self.fullTypename = fullTypename
 
-    def defineField(self,fullTypename,name,comment,tags):
+    def defineField(self,fullTypename,name,comment=None,tags=None,remarks=None):
         if not self.fields:
             self.fields = []
-        field = Field(fullTypename,name,comment,tags)
+        field = Field(
+            fullTypename,
+            name,
+            comment=comment,
+            tags=tags,
+            remarks=remarks,
+        )
         field.index = len(self.fields)
         self.fields.append(field)
         return field.index
@@ -166,6 +178,36 @@ class Type(object):
             return False
         return True
 
+    def to_schema(self, name=None, kind=None, class_name=None):
+        """Build Global/table schema dict. Field.comment → displayName, Field.remarks → remarks."""
+        name = name or self.typename
+        class_name = class_name or self.typename
+        if kind is None:
+            kind = 1 if self.singleton else 2
+        fields = []
+        for f in self.fields or []:
+            entry = {
+                "name": f.name,
+                "type": f.type.fullTypename if f.type else "int32",
+            }
+            if f.comment:
+                entry["displayName"] = f.comment
+            if f.remarks:
+                entry["remarks"] = f.remarks
+            tags = Field.format_tags(f.tags)
+            if tags:
+                entry["tags"] = tags
+            fields.append(entry)
+        schema = {
+            "name": name,
+            "kind": kind,
+            "className": class_name,
+        }
+        if self.comment:
+            schema["displayName"] = self.comment
+        schema["fields"] = fields
+        return schema
+
     def __str__(self):
         return self.fullTypename
 
@@ -175,9 +217,29 @@ class Type(object):
         return False
 
 class Field(object):
-    def __init__(self,fullTypename,name=None,comment=None,tags=None):
+    @staticmethod
+    def format_tags(tags):
+        if not tags:
+            return ""
+        cleaned = [t for t in tags if t and t != "__ignore"]
+        return ",".join(cleaned)
+
+    def __init__(self,fullTypename,name=None,comment=None,tags=None,remarks=None):
         self.type = Type.getOrCreate(fullTypename)
         self.name = name                            # 字段名
-        self.comment = comment                      # 字段备注
+        self.comment = comment or ""                # 显示名（对应 schema displayName）
+        self.remarks = remarks or ""                # 详细注释（对应 schema remarks）
         self.tags = tags                            # 字段标签列表
         self.index = -1                             # 字段索引
+
+    def codegen_comment(self):
+        """Legacy codegen text: comment, or comment(remarks) when genMetaDetail.
+
+        Newlines are flattened for genMeta; schema keeps original multiline text.
+        """
+        from XlsParser.Config import Config
+        c = (self.comment or "").replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ")
+        r = (self.remarks or "").replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ")
+        if Config.genMetaDetail and c and r:
+            return "%s(%s)" % (c, r)
+        return c or r

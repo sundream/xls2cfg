@@ -901,7 +901,8 @@ def collect_needed_class_names(type_strings, class_names_from_file):
 def write_class_schema(typ, schema_dir, json_dir=None, sheet_index=0):
     """Write kind=0 class schema. Filename = type name.
 
-    If json_dir is set, also ensure an empty {}.json (import path).
+    Does not write json data (kind=0 is schema/ClassDecl only).
+    ``json_dir`` is accepted for call-site compatibility but ignored.
     """
     if typ is None or not typ.isClass() or typ.typename == "__Field__":
         return ""
@@ -917,7 +918,7 @@ def write_class_schema(typ, schema_dir, json_dir=None, sheet_index=0):
     out["sheetName"] = "data"
     out["sheetIndex"] = sheet_index
     out["fields"] = schema["fields"]
-    return _write_class_schema_dict(out, schema_dir, json_dir)
+    return _write_class_schema_dict(out, schema_dir, json_dir=None)
 
 
 def _write_class_schema_dict(out, schema_dir, json_dir=None):
@@ -929,12 +930,7 @@ def _write_class_schema_dict(out, schema_dir, json_dir=None):
         fd.write(data)
         if not data.endswith("\n"):
             fd.write("\n")
-    if json_dir:
-        os.makedirs(json_dir, exist_ok=True)
-        json_path = os.path.join(json_dir, name + ".json")
-        if not os.path.exists(json_path):
-            with open(json_path, "w", encoding="utf-8", newline="\n") as fd:
-                fd.write("{}\n")
+    # kind=0: never write table/json data
     print("write", schema_dir, name)
     return schema_path
 
@@ -1040,7 +1036,6 @@ def import_xlsx_to_dirs(
                     "name": name,
                     "kind": KIND_CLASS,
                     "schema": path,
-                    "data": os.path.join(json_dir, name + ".json"),
                 })
         print(json.dumps({
             "ok": True,
@@ -1097,7 +1092,6 @@ def import_xlsx_to_dirs(
                     "name": name,
                     "kind": KIND_CLASS,
                     "schema": path,
-                    "data": os.path.join(json_dir, name + ".json"),
                 })
 
     print(json.dumps({

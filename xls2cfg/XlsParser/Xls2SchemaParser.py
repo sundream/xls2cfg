@@ -17,6 +17,7 @@ layout (optional):
 
 from XlsParser.XlsParser import XlsParser
 from XlsParser.Config import Config
+from XlsParser.Sheet import compose_table_display_name
 from XlsParser.Type import Type, Field
 import json
 import os
@@ -150,8 +151,8 @@ class Xls2SchemaParser(XlsParser):
         else:
             typ = Type.createClass(className)
         typ.singleton = self.singleton
-        # Table displayName = sheet display only (not workbook @ 中文)
-        typ.comment = self.sheet.sheetDisplayName
+        # Provisional; buildSchema overwrites with compose_table_display_name.
+        typ.comment = compose_table_display_name(self.sheet)
         return typ
 
     def buildSchema(self):
@@ -169,12 +170,18 @@ class Xls2SchemaParser(XlsParser):
                 remarks=self.sheet.col2comment.get(col) or "",
             )
         schema = typ.to_schema(name=name, kind=kind, class_name=className)
+        display = compose_table_display_name(self.sheet)
+        if display:
+            typ.comment = display
+            schema["displayName"] = display
         # Identity / workbook meta (stable key order for editors)
         out = {
             "kind": kind,
             "name": name,
         }
-        if schema.get("displayName"):
+        if display:
+            out["displayName"] = display
+        elif schema.get("displayName"):
             out["displayName"] = schema["displayName"]
         out["className"] = className
         out["workbook"] = self.sheet.xlsFilename

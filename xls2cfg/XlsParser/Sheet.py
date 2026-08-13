@@ -18,7 +18,10 @@ def getSheets():
 
 
 def split_at_display(title):
-    """Split 'name@displayName' → (name, displayName|None)."""
+    """Split 'name@displayName' → (name, displayName|None).
+
+    Used for workbook stems (effect@效果) and sheet titles (Buff@增益).
+    """
     if title is None:
         return None, None
     s = str(title)
@@ -31,7 +34,7 @@ def split_at_display(title):
 
 
 def is_importable_sheet_title(sheet_title):
-    """Skip internal sheets; allow SheetName@中文显示名 (ascii check on name only)."""
+    """Skip internal sheets; allow SheetName@中文备注 (ascii check on name only)."""
     logical, _ = split_at_display(sheet_title)
     if not logical:
         return False
@@ -40,6 +43,31 @@ def is_importable_sheet_title(sheet_title):
     if not logical.isascii():
         return False
     return True
+
+
+def compose_table_display_name(sheet):
+    """Table list label: {workbook显示名}-{sheet备注或sheet名}.
+
+    - Sheet title ``Buff@增益`` → label ``增益`` (part after @).
+    - Sheet title ``Data`` → label ``Data``.
+    - Single-sheet workbook with sheet ``data`` (no @) → workbook title only
+      (e.g. ``全局常量``), not ``全局常量-data``.
+    """
+    if sheet is None:
+        return None
+    wb = (getattr(sheet, "workbookDisplayName", None) or "").strip()
+    sheet_disp = (getattr(sheet, "sheetDisplayName", None) or "").strip()
+    sheet_name = (getattr(sheet, "sheetName", None) or "").strip()
+    label = sheet_disp or sheet_name
+    if not label:
+        return wb or None
+    # Classic 1-file-1-table: exact sheet title "data" (case-sensitive).
+    # Multi-sheet books often use "Data" / "Buff" — those always get wb-label.
+    if not sheet_disp and sheet_name == "data" and wb:
+        return wb
+    if wb:
+        return "%s-%s" % (wb, label)
+    return label
 
 
 class MergeCell(object):

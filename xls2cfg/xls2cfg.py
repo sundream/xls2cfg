@@ -30,6 +30,16 @@ from XlsParser.XlsClass import readClass
 from XlsParser.Config import Config
 from openpyxl import load_workbook
 
+# optparse has no bool type; use choice. Invalid values hint: choose from 'true', 'false', '1', '0'
+BOOL_CHOICES = ("true", "false", "1", "0")
+BOOL_OPTION = {"type": "choice", "choices": list(BOOL_CHOICES)}
+
+
+def choice_to_bool(value):
+    if value is None:
+        return None
+    return value in ("true", "1")
+
 def apply_json_config(jsonConfig):
     if "genMeta" in jsonConfig:
         Config.genMeta = jsonConfig.get("genMeta")
@@ -61,6 +71,82 @@ def apply_json_config(jsonConfig):
     if "namespace" in jsonConfig:
         Config.namespace = jsonConfig.get("namespace")
 
+def parse_csv_list(value):
+    if value is None:
+        return None
+    items = [x.strip() for x in str(value).split(",") if x.strip()]
+    return items
+
+def parse_json_arg(value, optName):
+    if value is None:
+        return None
+    try:
+        return json.loads(value)
+    except Exception:
+        raise Exception("invalid json for %s: %s" % (optName, value))
+
+def cfg_bool_choice(value):
+    return "true" if value else "false"
+
+def overlay_config(jsonConfig, options):
+    """CLI 显式传入的项覆盖 --config。未传为 None，不覆盖。"""
+    cfg = dict(jsonConfig or {})
+    if options.inputDir is not None:
+        cfg["input"] = options.inputDir
+    if options.outputDir is not None:
+        cfg["output"] = options.outputDir
+    outputFormats = parse_csv_list(options.outputFormats)
+    if outputFormats is not None:
+        cfg["outputFormats"] = outputFormats
+    keywords = parse_csv_list(options.keywords)
+    if keywords is not None:
+        cfg["keywords"] = keywords
+    tags = parse_csv_list(options.exportTags)
+    if tags is not None:
+        cfg["tags"] = tags
+    exclude = parse_csv_list(options.exclude)
+    if exclude is not None:
+        cfg["exclude"] = exclude
+    if options.namespace is not None:
+        cfg["namespace"] = options.namespace
+    if options.indent is not None:
+        cfg["indent"] = options.indent
+    if options.constraintSeperator is not None:
+        cfg["constraintSeperator"] = options.constraintSeperator
+    if options.maxCol is not None:
+        cfg["maxCol"] = options.maxCol
+    if options.i18nDirectory is not None:
+        cfg["i18nDirectory"] = options.i18nDirectory
+    if options.i18nLanguage is not None:
+        cfg["i18nLanguage"] = options.i18nLanguage
+    if options.i18nExtension is not None:
+        cfg["i18nExtension"] = options.i18nExtension
+    if options.i18nSeperator is not None:
+        cfg["i18nSeperator"] = options.i18nSeperator
+    if options.genMeta is not None:
+        cfg["genMeta"] = choice_to_bool(options.genMeta)
+    if options.genMetaDetail is not None:
+        cfg["genMetaDetail"] = choice_to_bool(options.genMetaDetail)
+    if options.genMetaHeader is not None:
+        cfg["genMetaHeader"] = choice_to_bool(options.genMetaHeader)
+    if options.pretty is not None:
+        cfg["pretty"] = choice_to_bool(options.pretty)
+    if options.localize is not None:
+        cfg["localize"] = choice_to_bool(options.localize)
+    if options.classNameFirstUpper is not None:
+        cfg["classNameFirstUpper"] = choice_to_bool(options.classNameFirstUpper)
+    if options.fieldNameFirstUpper is not None:
+        cfg["fieldNameFirstUpper"] = choice_to_bool(options.fieldNameFirstUpper)
+    if options.i18nExportOneFile is not None:
+        cfg["i18nExportOneFile"] = choice_to_bool(options.i18nExportOneFile)
+    defaults = parse_json_arg(options.defaultsJson, "--defaults")
+    if defaults is not None:
+        cfg["defaults"] = defaults
+    merge = parse_json_arg(options.mergeJson, "--merge")
+    if merge is not None:
+        cfg["merge"] = merge
+    return cfg
+
 def parser_for_format(outputFormat):
     if outputFormat == "lua":
         return Xls2LuaParser
@@ -85,12 +171,13 @@ def main():
 """usage: python %prog [options]
 e.g:
     python %prog --config=config.json
+    python %prog --input=../Excel --output=../Output/Client --output-formats=csharp,binary,json,schema --tags=c
     python %prog --from-schema=schema.json --from-json=data.json --out=out.xlsx
     python %prog --from-schema=schema.json --from-binary=data.bytes --out=out.xlsx
     python %prog --from-dir=../Output/Client --export-xlsx=../Excel
     python %prog --import-xlsx=a.xlsx --schema-dir=schema --json-dir=json"""
     parser = optparse.OptionParser(usage=usage,version="%prog 0.0.1")
-    parser.add_option("-c","--config",help="[optional] json config file for forward export")
+    parser.add_option("-c","--config",help="[optional] json config file; CLI args override file values")
     parser.add_option("-x","--onlyExportChange",action="store_true",default=False,help="[optional] only export change files")
     parser.add_option("--from-schema", dest="fromSchema", help="schema json for export")
     parser.add_option("--from-json", dest="fromJson", help="data json for export to excel")
@@ -102,7 +189,32 @@ e.g:
     parser.add_option("--schema-dir", dest="schemaDir", help="schema output dir for --import-xlsx")
     parser.add_option("--json-dir", dest="jsonDir", help="json output dir for --import-xlsx")
     parser.add_option("--sheet", dest="sheetName", help="optional sheet name for --import-xlsx")
-    parser.add_option("--tags", dest="exportTags", help="tag filter for binary export (comma-separated, e.g. c,s)")
+    parser.add_option("--tags", dest="exportTags", help="tag filter, comma-separated (e.g. c,s); default empty = all columns")
+    # optparse has no required=; input/output/outputFormats are checked after overlay.
+    # overlay uses is not None, so do not set default= on these dests (would always override --config).
+    parser.add_option("--input", dest="inputDir", help="excel input dir (config.input); required unless --config")
+    parser.add_option("--output", dest="outputDir", help="generated config output dir (config.output); required unless --config")
+    parser.add_option("--output-formats", dest="outputFormats", help="comma-separated formats: lua,luacvs,go,csharp,py,json,binary,schema; required unless --config")
+    parser.add_option("--keywords", dest="keywords", help="comma-separated reserved field names; default matches Config.keywords")
+    parser.add_option("--namespace", dest="namespace", help="code namespace, default %s" % Config.namespace)
+    parser.add_option("--gen-meta", dest="genMeta", help="true/false or 1/0, generate field comments, default %s" % cfg_bool_choice(Config.genMeta), **BOOL_OPTION)
+    parser.add_option("--gen-meta-detail", dest="genMetaDetail", help="true/false or 1/0, include excel remarks, default %s" % cfg_bool_choice(Config.genMetaDetail), **BOOL_OPTION)
+    parser.add_option("--gen-meta-header", dest="genMetaHeader", help="true/false or 1/0, comments in file header, default %s" % cfg_bool_choice(Config.genMetaHeader), **BOOL_OPTION)
+    parser.add_option("--pretty", dest="pretty", help="true/false or 1/0, pretty-print output, default %s" % cfg_bool_choice(Config.pretty), **BOOL_OPTION)
+    parser.add_option("--localize", dest="localize", help="true/false or 1/0, translate i18nstring, default %s" % cfg_bool_choice(Config.localize), **BOOL_OPTION)
+    parser.add_option("--class-name-first-upper", dest="classNameFirstUpper", help="true/false or 1/0, default %s" % cfg_bool_choice(Config.classNameFirstUpper), **BOOL_OPTION)
+    parser.add_option("--field-name-first-upper", dest="fieldNameFirstUpper", help="true/false or 1/0, default %s" % cfg_bool_choice(Config.fieldNameFirstUpper), **BOOL_OPTION)
+    parser.add_option("--i18n-directory", dest="i18nDirectory", help="i18n output directory, default %s" % Config.i18nDirectory)
+    parser.add_option("--i18n-language", dest="i18nLanguage", help="i18n language, default %s" % Config.i18nLanguage)
+    parser.add_option("--i18n-extension", dest="i18nExtension", help="i18n file ext: .po/.txt/.lua, default %s" % Config.i18nExtension)
+    parser.add_option("--i18n-export-one-file", dest="i18nExportOneFile", help="true/false or 1/0, default false", **BOOL_OPTION)
+    parser.add_option("--i18n-seperator", dest="i18nSeperator", help="txt i18n separator, default %s" % Config.i18nSeperator)
+    parser.add_option("--exclude", dest="exclude", help="comma-separated excel files to skip")
+    parser.add_option("--indent", dest="indent", help="indent string for pretty output, default 4 spaces")
+    parser.add_option("--constraint-seperator", dest="constraintSeperator", help="constraint separator, default %s" % Config.constraintSeperator)
+    parser.add_option("--max-col", dest="maxCol", type="int", help="max excel columns, default %s" % Config.maxCol)
+    parser.add_option("--defaults", dest="defaultsJson", help='json object, e.g. {"int":0}')
+    parser.add_option("--merge", dest="mergeJson", help='json object, e.g. {"toSheetName":["fromSheetName"]}')
     options,args = parser.parse_args()
 
     export_tags = None
@@ -146,26 +258,31 @@ e.g:
         parser.error("--from-json or --from-binary required with --from-schema")
         return
 
-    # --- forward gen (existing) ---
-    if options.config is None:
-        parser.error("option '--config' required (or use import/export options)")
-    configFileName = options.config
-    if not configFileName.endswith(".json"):
-        parser.error("config file need json")
+    # --- forward gen: --config optional, CLI overrides file ---
+    jsonConfig = {}
+    if options.config is not None:
+        configFileName = options.config
+        if not configFileName.endswith(".json"):
+            parser.error("config file need json")
+            return
+        fp = open(configFileName,"r",encoding="utf-8")
+        txtConfig = fp.read()
+        fp.close()
+        jsonConfig = json.loads(txtConfig)
+    try:
+        jsonConfig = overlay_config(jsonConfig, options)
+    except Exception as e:
+        parser.error(str(e))
         return
-    fp = open(configFileName,"r",encoding="utf-8")
-    txtConfig = fp.read()
-    fp.close()
-    jsonConfig = json.loads(txtConfig)
     inputDir = jsonConfig.get("input")
-    if inputDir is None:
-        parser.error("config 'input' required")
+    if not inputDir:
+        parser.error("'input' required (--input or config.input)")
     outputDir = jsonConfig.get("output")
-    if outputDir is None:
-        parser.error("config 'output' required")
+    if not outputDir:
+        parser.error("'output' required (--output or config.output)")
     outputFormats = jsonConfig.get("outputFormats")
-    if outputFormats is None:
-        parser.error("config 'outputFormat' required")
+    if not outputFormats:
+        parser.error("'outputFormats' required (--output-formats or config.outputFormats)")
     onlyExportChange = options.onlyExportChange
     exportFileList = []
     if onlyExportChange:
@@ -179,9 +296,13 @@ e.g:
                 exportFileList.append(fileName)
     i18nExportOneFile = jsonConfig.get("i18nExportOneFile")
     i18nDirectory = jsonConfig.get("i18nDirectory")
+    if i18nDirectory is None:
+        i18nDirectory = Config.i18nDirectory
     i18nLanguage = jsonConfig.get("i18nLanguage")
-    i18nExtension = jsonConfig.get("i18nExtension") or ".po"
-    i18nSeperator = jsonConfig.get("i18nSeperator") or "<:>"
+    if i18nLanguage is None:
+        i18nLanguage = Config.i18nLanguage
+    i18nExtension = jsonConfig.get("i18nExtension") or Config.i18nExtension
+    i18nSeperator = jsonConfig.get("i18nSeperator") or Config.i18nSeperator
     exclude = jsonConfig.get("exclude") or []
 
     apply_json_config(jsonConfig)

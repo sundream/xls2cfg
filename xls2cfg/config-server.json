@@ -1,7 +1,7 @@
 {
     "input": "../Excel",
     "output": "../Output/Server",
-    "outputFormats": ["binary","json","schema","csharp","go","lua"],
+    "outputFormats": ["csharp","binary","json","lua","schema"],
     "keywords": [
         "int",
         "int8",
@@ -38,6 +38,6 @@
     "pretty": true,
     "classNameFirstUpper": true,
     "fieldNameFirstUpper": true,
-    "namespace" : "cfg",
+    "namespace" : "Cfg",
     "tags": ["s"]
 }

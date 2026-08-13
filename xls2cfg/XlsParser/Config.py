@@ -13,7 +13,37 @@ class Config(object):
     constraintSeperator = ';'       # 约束分隔符
     indent = "    ";                # 缩进符
     localize = False                # true=国际化文本导出成目标语言
-    keywords = {}                   # 关键字
+    i18nDirectory = "../Output/I18N"
+    i18nLanguage = "zh_CN"
+    i18nExtension = ".po"
+    i18nSeperator = "<:>"
+    # 保留字（不可作字段名）；命令行/--config 未指定时使用此默认值
+    keywords = dict.fromkeys((
+        "int",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "string",
+        "bool",
+        "float",
+        "double",
+        "default",
+        "enum",
+        "object",
+        "function",
+        "end",
+        "break",
+        "continue",
+        "return",
+        "for",
+        "while",
+        "do",
+        "if",
+        "else",
+        "elseif",
+        "elif",
+    ), True)
     maxCol = 256                    # 最大列数
 
     @staticmethod

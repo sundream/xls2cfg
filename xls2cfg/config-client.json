@@ -2,7 +2,7 @@
     "input": "../Excel",
     "output": "../Output/Client",
     "outputFormats": [
-        "binary","json","schema","csharp"
+        "csharp","binary","json","schema"
     ],
     "keywords": [
         "int",
@@ -40,7 +40,7 @@
     "pretty": true,
     "classNameFirstUpper" : true,
     "fieldNameFirstUpper": true,
-    "namespace" : "cfg",
+    "namespace" : "Cfg",
     "tags": [
         "c"
     ]

@@ -2,9 +2,11 @@
 package {{namespace}}
 
 import (
+	"cmp"
 	"encoding/json"
-	"reflect"
 	"fmt"
+	"reflect"
+	"slices"
 )
 
 const (
@@ -15,6 +17,11 @@ const (
 var Format = Format_Json
 
 type LoadFromFileCallback func (fileName string) ([]byte, error);
+
+type rowSerializer interface {
+	SerializeToJson() ([]byte, error)
+	SerializeToBinary() []byte
+}
 
 type Tables struct {
 	{% for sheet in sheets -%}
@@ -67,6 +74,9 @@ func NewTables(loadFromFile LoadFromFileCallback) (*Tables, error) {
 }
 
 func DeserializeTableFromJson[K comparable, P any, V ~*P](table map[K]V, idName string, buf []byte) error {
+	if len(buf) == 0 {
+		return nil
+	}
 	jsonData := make([]map[string]any, 0)
 	if err := json.Unmarshal(buf, &jsonData); err != nil {
 		return err
@@ -90,6 +100,9 @@ func DeserializeTableFromJson[K comparable, P any, V ~*P](table map[K]V, idName 
 }
 
 func DeserializeTableFromBinary[K comparable, P any, V ~*P](table map[K]V, idName string, buf []byte) error {
+	if len(buf) == 0 {
+		return nil
+	}
 	bs := NewByteStream(buf)
 	count,err := bs.ReadUInt16()
 	if err != nil {
@@ -110,4 +123,83 @@ func DeserializeTableFromBinary[K comparable, P any, V ~*P](table map[K]V, idNam
 		table[key] = vPtr.Interface().(V)
 	}
 	return nil
+}
+
+func AddRow[K comparable, P any, V ~*P](table map[K]V, row V) {
+	if table == nil {
+		panic("table is nil")
+	}
+	if any(row) == nil {
+		panic("row is nil")
+	}
+	v := reflect.ValueOf(row).Elem()
+	f := v.FieldByName("Id")
+	if !f.IsValid() {
+		panic(fmt.Sprintf("%T has no Id field (AddRow is for 2d tables)", row))
+	}
+	table[f.Interface().(K)] = row
+}
+
+func AddRows[K comparable, P any, V ~*P](table map[K]V, rows []V) {
+	for _, row := range rows {
+		AddRow(table, row)
+	}
+}
+
+func SerializeRow(row rowSerializer) ([]byte, error) {
+	if row == nil {
+		return nil, fmt.Errorf("row is nil")
+	}
+	if Format == Format_Json {
+		return row.SerializeToJson()
+	}
+	return row.SerializeToBinary(), nil
+}
+
+func SerializeTableToJson[K cmp.Ordered, P any, V ~*P](table map[K]V) ([]byte, error) {
+	keys := make([]K, 0, len(table))
+	for k := range table {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	rows := make([]V, 0, len(keys))
+	for _, k := range keys {
+		rows = append(rows, table[k])
+	}
+	return json.Marshal(rows)
+}
+
+func SerializeTableToBinary[K cmp.Ordered, P any, V ~*P](table map[K]V) ([]byte, error) {
+	count := len(table)
+	if count > 65535 {
+		return nil, fmt.Errorf("table row count > 65535")
+	}
+	bs := NewByteStream(nil)
+	defer DestroyByteStream(bs)
+	bs.WriteUInt16(uint16(count))
+	if count > 0 {
+		keys := make([]K, 0, count)
+		for k := range table {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		for _, k := range keys {
+			row := table[k]
+			if any(row) == nil {
+				return nil, fmt.Errorf("nil row for key %v", k)
+			}
+			WriteStruct(bs, *row)
+		}
+	}
+	data := bs.ToBytes()
+	out := make([]byte, len(data))
+	copy(out, data)
+	return out, nil
+}
+
+func SerializeTable[K cmp.Ordered, P any, V ~*P](table map[K]V) ([]byte, error) {
+	if Format == Format_Json {
+		return SerializeTableToJson(table)
+	}
+	return SerializeTableToBinary(table)
 }

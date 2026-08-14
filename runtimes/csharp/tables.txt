@@ -76,6 +76,54 @@ namespace {{namespace}} {
             return table;
         }
 
+        private static K GetRowId<K,T>(T row) {
+            FieldInfo f = typeof(T).GetField("Id") ?? typeof(T).GetField("id");
+            if (f == null) {
+                throw new Exception(typeof(T).Name + " has no Id field (AddRow is for 2d tables)");
+            }
+            return (K)f.GetValue(row);
+        }
+
+        public void AddRow<K,T>(Dictionary<K,T> table, T row) {
+            if (table == null) {
+                throw new ArgumentNullException("table");
+            }
+            if (row == null) {
+                throw new ArgumentNullException("row");
+            }
+            table[GetRowId<K,T>(row)] = row;
+        }
+
+        public void AddRows<K,T>(Dictionary<K,T> table, IEnumerable<T> rows) {
+            if (rows == null) {
+                throw new ArgumentNullException("rows");
+            }
+            foreach (T row in rows) {
+                this.AddRow(table, row);
+            }
+        }
+
+        public byte[] SerializeRow<T>(T row) {
+            if (row == null) {
+                throw new ArgumentNullException("row");
+            }
+            string methodName = Tables.format == Format.Json ? "SerializeToJson" : "SerializeToBinary";
+            var f = typeof(T).GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance);
+            if (f == null) {
+                throw new Exception(typeof(T).Name + " has no " + methodName);
+            }
+            return (byte[])f.Invoke(row, null);
+        }
+
+        public byte[] SerializeTable<K,T>(Dictionary<K,T> table) {
+            string methodName = Tables.format == Format.Json ? "SerializeTableToJson" : "SerializeTableToBinary";
+            var f = typeof(T).GetMethod(methodName, BindingFlags.Public | BindingFlags.Static);
+            if (f == null) {
+                throw new Exception(typeof(T).Name + " has no " + methodName + " (SerializeTable is for 2d tables)");
+            }
+            return (byte[])f.Invoke(null, new object[] { table });
+        }
+
         public Tables(LoadFromFileCallback loadFromFile) {
             this.loadFromFile = loadFromFile;
         }

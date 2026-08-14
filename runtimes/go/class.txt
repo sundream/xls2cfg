@@ -12,6 +12,9 @@ type {{className}} struct {
 }
 
 func (o *{{className}}) DeserializeFromJson(buf []byte) error {
+	if len(buf) == 0 {
+		return nil
+	}
 	jsonData := make(map[string]any, 0)
 	if err := json.Unmarshal(buf, &jsonData); err != nil {
 		return err
@@ -27,6 +30,9 @@ func (o *{{className}}) DeserializeFromJsonX(jsonData map[string]any) error {
 }
 
 func (o *{{className}}) DeserializeFromBinary(buf []byte) error {
+	if len(buf) == 0 {
+		return nil
+	}
 	bs := NewByteStream(buf)
 	defer DestroyByteStream(bs)
 	return o.DeserializeFromBinaryX(bs)
@@ -38,4 +44,22 @@ func (o *{{className}}) DeserializeFromBinaryX(bs *ByteStream) error {
 	{{formatFieldFromBinary(field.index)}}
 	{% endfor %}
 	return nil
+}
+
+func (o *{{className}}) SerializeToJson() ([]byte, error) {
+	return json.Marshal(o)
+}
+
+func (o *{{className}}) Serialize(bs *ByteStream) {
+	WriteStruct(bs, *o)
+}
+
+func (o *{{className}}) SerializeToBinary() []byte {
+	bs := NewByteStream(nil)
+	defer DestroyByteStream(bs)
+	o.Serialize(bs)
+	data := bs.ToBytes()
+	out := make([]byte, len(data))
+	copy(out, data)
+	return out
 }

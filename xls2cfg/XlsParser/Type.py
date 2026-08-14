@@ -93,6 +93,7 @@ class Type(object):
                     comment=field.get("comment"),
                     tags=field.get("tags"),
                     remarks=field.get("remarks"),
+                    group=field.get("group"),
                 )
         return typ
 
@@ -151,15 +152,19 @@ class Type(object):
         self.valueType = valueType
         self.fullTypename = fullTypename
 
-    def defineField(self,fullTypename,name,comment=None,tags=None,remarks=None):
+    def defineField(self,fullTypename,name,comment=None,tags=None,remarks=None,group=None):
         if not self.fields:
             self.fields = []
+        tags, parsed_group = parse_tags_cell(tags)
+        if group is None:
+            group = parsed_group
         field = Field(
             fullTypename,
             name,
             comment=comment,
             tags=tags,
             remarks=remarks,
+            group=group,
         )
         field.index = len(self.fields)
         self.fields.append(field)
@@ -197,6 +202,8 @@ class Type(object):
             tags = Field.format_tags(f.tags)
             if tags:
                 entry["tags"] = tags
+            if f.group:
+                entry["group"] = f.group
             fields.append(entry)
         schema = {
             "name": name,
@@ -216,20 +223,58 @@ class Type(object):
             return True
         return False
 
+def parse_tags_cell(value):
+    """Split Excel tags cell / list<string> into (tags_or_None, group_or_None).
+
+    `group=name` is editor metadata, not an export tag.
+    """
+    if value is None or value == "":
+        return None, None
+    if isinstance(value, (list, tuple)):
+        tokens = [str(t).strip() for t in value if t is not None and str(t).strip()]
+    else:
+        tokens = [t.strip() for t in str(value).split(",") if t.strip()]
+    tags = []
+    group = None
+    for t in tokens:
+        if t.startswith("group="):
+            name = t[6:].strip()
+            if not name:
+                raise Exception("invalid tags group, expire group=name")
+            if group is not None:
+                raise Exception("multiple group= in tags")
+            group = name
+        else:
+            tags.append(t)
+    return (tags if tags else None), group
+
+
+def format_tags_cell(tags, group=None):
+    """Excel tags row: real tags plus group=name (export/import round-trip)."""
+    if isinstance(tags, str):
+        parts = [t.strip() for t in tags.split(",") if t.strip() and not t.strip().startswith("group=")]
+    else:
+        parts = [t for t in (tags or []) if t and t != "__ignore" and not str(t).startswith("group=")]
+    if group:
+        parts.append("group=%s" % group)
+    return ",".join(parts)
+
+
 class Field(object):
     @staticmethod
     def format_tags(tags):
         if not tags:
             return ""
-        cleaned = [t for t in tags if t and t != "__ignore"]
+        cleaned = [t for t in tags if t and t != "__ignore" and not str(t).startswith("group=")]
         return ",".join(cleaned)
 
-    def __init__(self,fullTypename,name=None,comment=None,tags=None,remarks=None):
+    def __init__(self,fullTypename,name=None,comment=None,tags=None,remarks=None,group=None):
         self.type = Type.getOrCreate(fullTypename)
         self.name = name                            # 字段名
         self.comment = comment or ""                # 显示名（对应 schema displayName）
         self.remarks = remarks or ""                # 详细注释（对应 schema remarks）
-        self.tags = tags                            # 字段标签列表
+        self.tags = tags                            # 字段标签列表（不含 group=）
+        self.group = group                          # 编辑器字段分组
         self.index = -1                             # 字段索引
 
     def codegen_comment(self):

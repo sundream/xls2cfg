@@ -6,7 +6,7 @@ import os
 import time
 from openpyxl.utils import get_column_letter
 from XlsParser.CheckType import toValue, intLiteralBase, INT_BASE_TYPENAMES
-from XlsParser.Type import Type
+from XlsParser.Type import Type, parse_tags_cell
 from XlsParser import Convert
 from XlsParser.Config import Config
 from copy import deepcopy
@@ -116,7 +116,8 @@ class Sheet(object):
         self.col2key = {}               # 列号 -> 变量名
         self.col2type = {}              # 列号 -> 类型
         self.col2constraint = {}        # 列号 -> 约束
-        self.col2tags = {}              # 列号 -> [tag,...]
+        self.col2tags = {}              # 列号 -> [tag,...]（不含 group=）
+        self.col2group = {}             # 列号 -> 编辑器分组名
         self.idCol = 0                  # id列
         self.splitCol = -1              # 拆分列
         self.splitIdCol = -1            # 拆分主键列
@@ -288,10 +289,18 @@ class Sheet(object):
                     if mergeCell and len(mergeCell.mapkeys) > 0:
                         mergeCell.fieldCount = len(mergeCell.mapkeys)
                     if cell.value:
-                        tags = cell.value.split(",")
-                        if j not in self.col2tags:
-                            self.col2tags[j] = []
-                        self.col2tags[j].extend(tags)
+                        try:
+                            tags, group = parse_tags_cell(cell.value)
+                        except Exception as e:
+                            raise Exception(self.message(i,j,e))
+                        if group:
+                            self.col2group[j] = group
+                        if tags:
+                            if j not in self.col2tags or self.col2tags[j] is None:
+                                self.col2tags[j] = []
+                            self.col2tags[j].extend(tags)
+                        elif j not in self.col2tags:
+                            self.col2tags[j] = None
                     elif j not in self.col2tags:
                         self.col2tags[j] = None
 
@@ -474,8 +483,13 @@ class Sheet(object):
                     line.append(value)
                 elif self.header[j] == "tags":
                     if value:
-                        tags = value.split(",")
+                        try:
+                            tags, group = parse_tags_cell(value)
+                        except Exception as e:
+                            raise Exception(self.message(i,j,e))
                         self.col2tags[i] = tags
+                        if group:
+                            self.col2group[i] = group
                     else:
                         self.col2tags[i] = None
                 elif self.header[j] == "desc":
@@ -595,6 +609,7 @@ class Sheet(object):
                 sheet.col2type = self.col2type
                 sheet.col2constraint = self.col2constraint
                 sheet.col2tags = self.col2tags
+                sheet.col2group = self.col2group
                 sheet.col2uniques = self.col2uniques
                 sheet.key2col = self.key2col
                 sheet.splitCol = self.splitCol

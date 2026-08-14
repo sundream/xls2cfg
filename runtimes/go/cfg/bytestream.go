@@ -277,6 +277,10 @@ func (bs *ByteStream) Clear() {
 	bs.buffer.Reset()
 }
 
+func (bs *ByteStream) ToBytes() []byte {
+	return bs.buffer.Bytes()
+}
+
 func (bs *ByteStream) ReadFile(filename string) error {
 	data, err := os.ReadFile(filename)
 	if err != nil {
@@ -482,6 +486,9 @@ func WriteList[V any](bs *ByteStream, list []V) {
 
 func writeList(bs *ByteStream, v reflect.Value) {
 	length := v.Len()
+	if length > 255 {
+		panic("list length > 255")
+	}
 	bs.WriteUInt8(uint8(length))
 	for i := 0; i < length; i++ {
 		writeValue(bs, v.Index(i))
@@ -494,6 +501,9 @@ func WriteMap[K comparable, V any](bs *ByteStream, m map[K]V) {
 
 func writeMap(bs *ByteStream, v reflect.Value) {
 	length := v.Len()
+	if length > 255 {
+		panic("map length > 255")
+	}
 	bs.WriteUInt8(uint8(length))
 	for _, key := range v.MapKeys() {
 		writeValue(bs, key)

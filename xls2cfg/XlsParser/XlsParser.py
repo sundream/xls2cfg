@@ -93,6 +93,7 @@ class XlsParser(object):
                 comment=comment,
                 tags=fieldTags,
                 remarks=remarks,
+                group=self.sheet.col2group.get(col),
             )
             if not self.sheet.singleton and col == self.sheet.idCol:
                 self.type.setIdField(idx)

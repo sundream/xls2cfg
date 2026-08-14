@@ -34,7 +34,7 @@ from XlsParser.Xls2SchemaParser import (
     KIND_2D,
 )
 from XlsParser.ByteStream import ByteStream
-from XlsParser.Type import Type
+from XlsParser.Type import Type, parse_tags_cell, format_tags_cell
 from XlsParser.XlsClass import readClass
 
 CLASS_WORKBOOK = "__class__.xlsx"
@@ -451,7 +451,7 @@ def fill_worksheet_from_schema(ws, schema: dict, data) -> None:
                     typ,
                     cell_val,
                     field_display_name(f, n),
-                    f.get("tags") or "",
+                    format_tags_cell(f.get("tags"), f.get("group")),
                     "",
                 ]
             )
@@ -499,7 +499,7 @@ def fill_worksheet_from_schema(ws, schema: dict, data) -> None:
             # Non-split fields keep their constraint text on the first column.
             if width == 1 and not field_layout(f):
                 constraints_row[-1] = f.get("constraint") or ""
-            tags_row.append(f.get("tags") or "")
+            tags_row.append(format_tags_cell(f.get("tags"), f.get("group")))
             tags_row.extend([""] * (width - 1))
 
         remarks_row.append("##end")
@@ -651,7 +651,7 @@ def write_class_workbook(class_schemas, xlsx_out: Path) -> Path:
             schema_display_name(schema, ""),
         ]
         for f in fields:
-            tags_val = f.get("tags") or ""
+            tags_val = format_tags_cell(f.get("tags"), f.get("group"))
             line.extend([
                 f.get("name") or "",
                 f.get("type") or "int32",
@@ -749,6 +749,7 @@ def register_class_schemas_from_dir(schema_dir: Path) -> None:
                 "comment": f.get("displayName") or "",
                 "tags": None,
                 "remarks": f.get("remarks") or "",
+                "group": f.get("group"),
             })
         if not fields:
             continue
@@ -757,7 +758,8 @@ def register_class_schemas_from_dir(schema_dir: Path) -> None:
             existing.idFieldIdx = -1
             for f in fields:
                 existing.defineField(
-                    f["type"], f["name"], comment=f["comment"], remarks=f["remarks"]
+                    f["type"], f["name"], comment=f["comment"], remarks=f["remarks"],
+                    group=f.get("group"),
                 )
             if obj.get("displayName"):
                 existing.comment = obj.get("displayName")
@@ -970,9 +972,12 @@ def write_class_schemas_from_excel(excel_dir, schema_dir):
                     }
                     if f.get("comment"):
                         entry["displayName"] = f["comment"]
-                    tags = TypeField.format_tags(f.get("tags"))
+                    tags, group = parse_tags_cell(f.get("tags"))
+                    tags = TypeField.format_tags(tags)
                     if tags:
                         entry["tags"] = tags
+                    if group:
+                        entry["group"] = group
                     fields.append(entry)
                 if not typename or not fields:
                     continue

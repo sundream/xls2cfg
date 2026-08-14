@@ -4,7 +4,7 @@
 
 import os
 from XlsParser.Sheet import Sheet
-from XlsParser.Type import Type
+from XlsParser.Type import Type, parse_tags_cell
 from XlsParser.Config import Config
 from openpyxl import load_workbook
 
@@ -55,7 +55,11 @@ def readClass(excelDir):
             comment = row[1]
             fields = row[2]
             for j in range(len(fields)-1,-1,-1):
-                if fields[j]["type"] == '' or not Config.isNeedExportTags(fields[j]["tags"]):
+                tags, group = parse_tags_cell(fields[j].get("tags"))
+                fields[j]["tags"] = tags
+                if group:
+                    fields[j]["group"] = group
+                if fields[j]["type"] == '' or not Config.isNeedExportTags(tags):
                     fields.pop(j)
             if len(fields) > 0:
                 typ = Type.createClass(typename,fields)

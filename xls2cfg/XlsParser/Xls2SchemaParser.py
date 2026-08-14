@@ -6,7 +6,7 @@
 Schema top-level:
   kind, name, displayName?, className, workbook, sheetName, sheetIndex, fields[]
 
-fields: name, type, displayName, remarks, constraint, tags, layout
+fields: name, type, displayName, remarks, constraint, tags, group, layout
 Type uses Excel raw type text (fullTypename). Aliases apply only to internal typename.
 
 layout (optional):
@@ -168,6 +168,7 @@ class Xls2SchemaParser(XlsParser):
                 comment=self.sheet.col2desc.get(col) or "",
                 tags=self.sheet.col2tags.get(col),
                 remarks=self.sheet.col2comment.get(col) or "",
+                group=self.sheet.col2group.get(col),
             )
         schema = typ.to_schema(name=name, kind=kind, class_name=className)
         display = compose_table_display_name(self.sheet)

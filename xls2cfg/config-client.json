@@ -40,6 +40,7 @@
     "pretty": true,
     "classNameFirstUpper" : true,
     "fieldNameFirstUpper": true,
+    "fieldReadonly": false,
     "namespace" : "Cfg",
     "tags": [
         "c"

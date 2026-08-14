@@ -57,6 +57,8 @@ def apply_json_config(jsonConfig):
         Config.classNameFirstUpper = jsonConfig.get("classNameFirstUpper")
     if "fieldNameFirstUpper" in jsonConfig:
         Config.fieldNameFirstUpper = jsonConfig.get("fieldNameFirstUpper")
+    if "fieldReadonly" in jsonConfig:
+        Config.fieldReadonly = jsonConfig.get("fieldReadonly")
     if "constraintSeperator" in jsonConfig:
         Config.constraintSeperator = jsonConfig.get("constraintSeperator")
     if "indent" in jsonConfig:
@@ -137,6 +139,8 @@ def overlay_config(jsonConfig, options):
         cfg["classNameFirstUpper"] = choice_to_bool(options.classNameFirstUpper)
     if options.fieldNameFirstUpper is not None:
         cfg["fieldNameFirstUpper"] = choice_to_bool(options.fieldNameFirstUpper)
+    if options.fieldReadonly is not None:
+        cfg["fieldReadonly"] = choice_to_bool(options.fieldReadonly)
     if options.i18nExportOneFile is not None:
         cfg["i18nExportOneFile"] = choice_to_bool(options.i18nExportOneFile)
     defaults = parse_json_arg(options.defaultsJson, "--defaults")
@@ -204,6 +208,7 @@ e.g:
     parser.add_option("--localize", dest="localize", help="true/false or 1/0, translate i18nstring, default %s" % cfg_bool_choice(Config.localize), **BOOL_OPTION)
     parser.add_option("--class-name-first-upper", dest="classNameFirstUpper", help="true/false or 1/0, default %s" % cfg_bool_choice(Config.classNameFirstUpper), **BOOL_OPTION)
     parser.add_option("--field-name-first-upper", dest="fieldNameFirstUpper", help="true/false or 1/0, default %s" % cfg_bool_choice(Config.fieldNameFirstUpper), **BOOL_OPTION)
+    parser.add_option("--field-readonly", dest="fieldReadonly", help="true/false or 1/0, csharp fields readonly, default %s" % cfg_bool_choice(Config.fieldReadonly), **BOOL_OPTION)
     parser.add_option("--i18n-directory", dest="i18nDirectory", help="i18n output directory, default %s" % Config.i18nDirectory)
     parser.add_option("--i18n-language", dest="i18nLanguage", help="i18n language, default %s" % Config.i18nLanguage)
     parser.add_option("--i18n-extension", dest="i18nExtension", help="i18n file ext: .po/.txt/.lua, default %s" % Config.i18nExtension)

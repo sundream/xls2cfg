@@ -9,6 +9,7 @@ class Config(object):
     defaults = {}                   # 类型默认值字典: 类型名 -> 默认值
     classNameFirstUpper = False     # true=导出的类名首字母大写
     fieldNameFirstUpper = False     # true=导出的字段名首字母大写
+    fieldReadonly = True            # true=C# 字段加 readonly（仅 csharp）
     namespace = "Cfg"               # 命名空间
     constraintSeperator = ';'       # 约束分隔符
     indent = "    ";                # 缩进符

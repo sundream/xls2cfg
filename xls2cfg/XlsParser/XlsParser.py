@@ -110,6 +110,7 @@ class XlsParser(object):
         typ.context["className"] = typ.typename
         typ.context["namespace"] = cls.formatNamespace(Config.namespace)
         typ.context["classComment"] = typ.comment if typ.comment else ""
+        typ.context["fieldReadonly"] = Config.fieldReadonly
         idField = typ.getIdField()
         if idField:
             typ.context["idName"] = cls.formatFieldName(idField.name)

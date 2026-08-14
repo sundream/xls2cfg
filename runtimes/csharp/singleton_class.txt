@@ -8,7 +8,7 @@ namespace {{namespace}} {
     // {{classComment}}
     public sealed class {{className}} {
         {% for field in fields -%}
-        public readonly {{field.typename}} {{field.name}};   // {{field.comment}}
+        public{% if fieldReadonly %} readonly{% endif %} {{field.typename}} {{field.name}};   // {{field.comment}}
         {% endfor %}
 
         public {{className}} () {}

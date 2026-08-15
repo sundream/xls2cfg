@@ -325,6 +325,11 @@ def toValue(value,typ,options=None):
         value,ok = toMap(value,typ,options)
         if not ok:
             return False,"expect %s,but got python type '%s',value='%s'" % (typ.fullTypename,pythonType,value)
+    elif typ.isEnum():
+        ok, resolved = typ.resolveEnumValue(value)
+        if not ok:
+            return False, resolved
+        return toValue(resolved, typ.underlyingType(), options)
     elif typ.isClass():
         value,ok = toClass(value,typ,options)
         if not ok:

@@ -39,6 +39,11 @@ class Type(object):
         "map" : {},
     }
 
+    ENUM_REALTYPES = (
+        "uint8", "int8", "uint16", "int16",
+        "uint32", "int32", "int64", "uint64",
+    )
+
     #@brief 获取/创建类型
     #@param fullTypename string 类型完整名
     #@return Type 类型
@@ -77,10 +82,23 @@ class Type(object):
             return False
         return typ.isClass()
 
+    #@brief 判断是否为有效枚举名
+    @staticmethod
+    def isEnumName(enumName):
+        typ = Type.get(enumName)
+        if not typ:
+            return False
+        return typ.isEnum()
+
     #@brief 创建类
     #@param className string 类名
     #@param fields list<field dict> 字段列表
     #@return Type 类
+    @staticmethod
+    def unregister(typeName):
+        """Remove a registered type so it can be redefined (json override xlsx)."""
+        Type.types.pop(typeName, None)
+
     @staticmethod
     def createClass(className,fields=None):
         Type.types[className] = True
@@ -97,6 +115,68 @@ class Type(object):
                 )
         return typ
 
+    @staticmethod
+    def parse_enum_int(raw):
+        """Parse enum int literal: decimal / 0x hex / 0b binary. Returns (ok, int_or_err)."""
+        from XlsParser.CheckType import toInt
+        if raw is None or raw == "":
+            return False, "empty"
+        value, ok = toInt(raw)
+        if not ok:
+            return False, "invalid int '%s'" % raw
+        return True, int(value)
+
+    #@brief 创建枚举
+    #@param enumName string 枚举名
+    #@param enumType string 底层整数类型
+    #@param items list 枚举项 {name,value,comment,tags}
+    #@param comment string 备注
+    #@param flags bool 是否可组合（等价 C# [Flags]）
+    #@return Type
+    @staticmethod
+    def createEnum(enumName, enumType=None, items=None, comment=None, flags=False):
+        enumType = (enumType or "int32").strip() or "int32"
+        if enumType not in Type.ENUM_REALTYPES:
+            raise Exception("invalid enum enumType '%s' for %s (expect %s)" % (
+                enumType, enumName, ",".join(Type.ENUM_REALTYPES)))
+        Type.types[enumName] = True
+        typ = Type.create(enumName)
+        typ._isEnum = True
+        typ.enumType = enumType
+        typ.flags = bool(flags)
+        typ.comment = comment
+        typ.enumFields = []
+        typ.enumByName = {}
+        typ.enumByValue = set()
+        next_value = 1 if typ.flags else 0
+        for item in items or []:
+            name = item.get("name")
+            if not name:
+                continue
+            raw = item.get("value")
+            if raw is None or raw == "":
+                value = next_value
+            else:
+                ok, value = Type.parse_enum_int(raw)
+                if not ok:
+                    raise Exception("invalid enum value '%s' for %s.%s" % (raw, enumName, name))
+            if name in typ.enumByName:
+                raise Exception("repeat enum item '%s' in %s" % (name, enumName))
+            entry = {
+                "name": name,
+                "value": value,
+                "comment": item.get("comment") or "",
+                "tags": item.get("tags"),
+            }
+            typ.enumFields.append(entry)
+            typ.enumByName[name] = value
+            typ.enumByValue.add(value)
+            if typ.flags:
+                next_value = (value << 1) if value > 0 else 1
+            else:
+                next_value = value + 1
+        return typ
+
     def __init__(self,fullTypename):
         self.fullTypename = None                    # 完整类型名
         self.typename = None                        # 主类型名
@@ -105,6 +185,12 @@ class Type(object):
         self.fields = None                          # 类的域定义列表
         self.idFieldIdx = -1                        # id域索引
         self.comment = None                         # 类型备注 / 表 displayName
+        self._isEnum = False                        # true=枚举类型
+        self.enumType = None                        # 枚举底层整数类型名
+        self.flags = False                          # true=[Flags] 位掩码枚举
+        self.enumFields = None                       # 枚举项列表
+        self.enumByName = None                      # 枚举名 -> 值
+        self.enumByValue = None                     # 合法整数值集合
         self.__fromString(fullTypename)
         self.singleton = False                      # true=单例类型
 
@@ -179,14 +265,108 @@ class Type(object):
         return self.fields[self.idFieldIdx]
 
     def isClass(self):
+        if self.isEnum():
+            return False
         if not self.fields:
             return False
         return True
 
+    def isEnum(self):
+        return bool(getattr(self, "_isEnum", False))
+
+    def underlyingType(self):
+        """Type used for codegen / binary IO (enum → enumType)."""
+        if self.isEnum():
+            return Type.getOrCreate(self.enumType or "int32")
+        return self
+
+    def resolveEnumValue(self, value):
+        """Map enum field name or allowed int to integer. Returns (ok, value_or_err).
+
+        Flags enums also accept bitmask ints (OR of defined bits) and combined
+        names separated by '|' (e.g. FlagA|FlagB or FlagA | FlagC | FlagD).
+        """
+        if value is None or value == "":
+            return True, None
+        if isinstance(value, bool):
+            return False, "enum does not accept bool"
+
+        def _flags_mask():
+            mask = 0
+            for v in (self.enumByValue or set()):
+                mask |= int(v)
+            return mask
+
+        def _accept_int(n):
+            if getattr(self, "flags", False):
+                allowed = _flags_mask()
+                unknown = int(n) & ~allowed
+                if unknown != 0:
+                    return False, "invalid flags bits %s in %s (unknown %s, allowed mask %s)" % (
+                        n, self.typename, unknown, allowed)
+                return True, int(n)
+            allowed = self.enumByValue or set()
+            if n not in allowed:
+                return False, "invalid enum value %s in %s (expect one of %s)" % (
+                    n, self.typename, sorted(allowed))
+            return True, n
+
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return _accept_int(int(value))
+        s = str(value).strip()
+        if s in (self.enumByName or {}):
+            return True, self.enumByName[s]
+        if getattr(self, "flags", False) and "|" in s:
+            parts = [p.strip() for p in s.split("|") if p.strip()]
+            if not parts:
+                return True, 0
+            combined = 0
+            for p in parts:
+                if p not in (self.enumByName or {}):
+                    return False, "unknown enum field '%s' in flags %s" % (p, self.typename)
+                combined |= int(self.enumByName[p])
+            return _accept_int(combined)
+        try:
+            ok, n = Type.parse_enum_int(s)
+            if not ok:
+                raise Exception(n)
+        except Exception:
+            hint = "name, A|B, or int/0x/0b" if getattr(self, "flags", False) else "name or int/0x/0b"
+            return False, "unknown enum field '%s' in %s (expect %s in %s)" % (
+                s, self.typename, hint, sorted(self.enumByValue or []))
+        return _accept_int(n)
+
     def to_schema(self, name=None, kind=None, class_name=None):
         """Build Global/table schema dict. Field.comment → displayName, Field.remarks → remarks."""
         name = name or self.typename
-        class_name = class_name or self.typename
+        type_name = class_name or self.typename
+        if self.isEnum():
+            if kind is None:
+                kind = 0
+            items = []
+            for it in self.enumFields or []:
+                entry = {
+                    "name": it["name"],
+                    "value": it["value"],
+                }
+                if it.get("comment"):
+                    entry["displayName"] = it["comment"]
+                tags = Field.format_tags(it.get("tags"))
+                if tags:
+                    entry["tags"] = tags
+                items.append(entry)
+            schema = {
+                "name": name,
+                "kind": kind,
+                "typename": type_name,
+                "enumType": self.enumType or "int32",
+                "fields": items,
+            }
+            if getattr(self, "flags", False):
+                schema["flags"] = True
+            if self.comment:
+                schema["displayName"] = self.comment
+            return schema
         if kind is None:
             kind = 1 if self.singleton else 2
         fields = []
@@ -208,7 +388,7 @@ class Type(object):
         schema = {
             "name": name,
             "kind": kind,
-            "className": class_name,
+            "typename": type_name,
         }
         if self.comment:
             schema["displayName"] = self.comment

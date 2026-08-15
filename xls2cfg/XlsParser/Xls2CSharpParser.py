@@ -98,14 +98,15 @@ class Xls2CSharpParser(XlsParser):
     def formatFieldFromJson(cls,typ,fieldIndex):
         field = typ.fields[fieldIndex]
         fieldInitStatment = ""
-        fieldTypename = field.type.typename
+        fieldType = field.type.underlyingType() if field.type.isEnum() else field.type
+        fieldTypename = fieldType.typename
         fieldName = field.name
         langFieldName = typ.context["fields"][field.index]["name"]
-        if field.type.isClass():
+        if fieldType.isClass():
             fieldInitStatment = 'this.{langFieldName} = new {className}(jsonNode["{fieldName}"]);'.format(
                 fieldName=fieldName,
                 langFieldName=langFieldName,
-                className=cls.formatClassName(field.type.typename),
+                className=cls.formatClassName(fieldType.typename),
             )
         elif fieldTypename == "bool":
             fieldInitStatment = 'this.{langFieldName} = jsonNode["{fieldName}"];'.format(fieldName=fieldName,langFieldName=langFieldName)
@@ -122,9 +123,9 @@ class Xls2CSharpParser(XlsParser):
         elif fieldTypename == "json":
             fieldInitStatment = 'this.{langFieldName} = jsonNode["{fieldName}"];'.format(fieldName=fieldName,langFieldName=langFieldName)
         elif fieldTypename == "list":
-            fieldInitStatment = 'this.{langFieldName} = JSON.Parse<{fieldFullTypename}>(jsonNode["{fieldName}"]);'.format(fieldName=fieldName,langFieldName=langFieldName,fieldFullTypename=cls.formatType(field.type))
+            fieldInitStatment = 'this.{langFieldName} = JSON.Parse<{fieldFullTypename}>(jsonNode["{fieldName}"]);'.format(fieldName=fieldName,langFieldName=langFieldName,fieldFullTypename=cls.formatType(fieldType))
         elif fieldTypename == "map":
-            fieldInitStatment = 'this.{langFieldName} = JSON.Parse<{fieldFullTypename}>(jsonNode["{fieldName}"]);'.format(fieldName=fieldName,langFieldName=langFieldName,fieldFullTypename=cls.formatType(field.type))
+            fieldInitStatment = 'this.{langFieldName} = JSON.Parse<{fieldFullTypename}>(jsonNode["{fieldName}"]);'.format(fieldName=fieldName,langFieldName=langFieldName,fieldFullTypename=cls.formatType(fieldType))
         else:
             raise Exception("unsupported type: %s" % field.type.fullTypename)
         return fieldInitStatment
@@ -133,13 +134,14 @@ class Xls2CSharpParser(XlsParser):
     def formatFieldFromBinary(cls,typ,fieldIndex):
         field = typ.fields[fieldIndex]
         fieldInitStatment = ""
-        fieldTypename = field.type.typename
+        fieldType = field.type.underlyingType() if field.type.isEnum() else field.type
+        fieldTypename = fieldType.typename
         fieldName = field.name
         langFieldName = typ.context["fields"][field.index]["name"]
-        if field.type.isClass():
+        if fieldType.isClass():
             fieldInitStatment = 'this.{langFieldName} = new {className}(bs);'.format(
                 langFieldName=langFieldName,
-                className=cls.formatClassName(field.type.typename),
+                className=cls.formatClassName(fieldType.typename),
             )
         elif fieldTypename == "bool":
             fieldInitStatment = 'this.{langFieldName} = bs.ReadBool();'.format(fieldName=fieldName,langFieldName=langFieldName)
@@ -174,12 +176,12 @@ class Xls2CSharpParser(XlsParser):
         elif fieldTypename == "json":
             fieldInitStatment = 'this.{langFieldName} = bs.ReadJson();'.format(fieldName=fieldName,langFieldName=langFieldName)
         elif fieldTypename == "list":
-            value_expr = cls._read_expr(field.type.valueType)
-            fieldInitStatment = '{{int length = bs.ReadUInt8(); this.{langFieldName} = new List<{valueType}>(length); for (int i = 0; i < length; i++) {{ this.{langFieldName}.Add({value_expr}); }} }}'.format(langFieldName=langFieldName,valueType=cls.formatType(field.type.valueType),value_expr=value_expr)
+            value_expr = cls._read_expr(fieldType.valueType)
+            fieldInitStatment = '{{int length = bs.ReadUInt8(); this.{langFieldName} = new List<{valueType}>(length); for (int i = 0; i < length; i++) {{ this.{langFieldName}.Add({value_expr}); }} }}'.format(langFieldName=langFieldName,valueType=cls.formatType(fieldType.valueType),value_expr=value_expr)
         elif fieldTypename == "map":
-            key_expr = cls._read_expr(field.type.keyType)
-            value_expr = cls._read_expr(field.type.valueType)
-            fieldInitStatment = '{{int length = bs.ReadUInt8(); this.{langFieldName} = new Dictionary<{keyType}, {valueType}>(length); for (int i = 0; i < length; i++) {{ this.{langFieldName}.Add({key_expr}, {value_expr}); }} }}'.format(langFieldName=langFieldName,keyType=cls.formatType(field.type.keyType), valueType=cls.formatType(field.type.valueType),key_expr=key_expr,value_expr=value_expr)
+            key_expr = cls._read_expr(fieldType.keyType)
+            value_expr = cls._read_expr(fieldType.valueType)
+            fieldInitStatment = '{{int length = bs.ReadUInt8(); this.{langFieldName} = new Dictionary<{keyType}, {valueType}>(length); for (int i = 0; i < length; i++) {{ this.{langFieldName}.Add({key_expr}, {value_expr}); }} }}'.format(langFieldName=langFieldName,keyType=cls.formatType(fieldType.keyType), valueType=cls.formatType(fieldType.valueType),key_expr=key_expr,value_expr=value_expr)
         else:
             raise Exception("unsupported type: %s" % field.type.fullTypename)
         return fieldInitStatment
@@ -187,7 +189,8 @@ class Xls2CSharpParser(XlsParser):
     @classmethod
     def formatFieldToString(cls,typ,fieldIndex):
         field = typ.fields[fieldIndex]
-        fieldTypename = field.type.typename
+        fieldType = field.type.underlyingType() if field.type.isEnum() else field.type
+        fieldTypename = fieldType.typename
         fieldName = field.name
         langFieldName = typ.context["fields"][field.index]["name"]
         if fieldTypename == "bigint" or fieldTypename == "list" or fieldTypename == "map":
@@ -198,6 +201,8 @@ class Xls2CSharpParser(XlsParser):
     @classmethod
     def _json_value(cls, typ, expr, depth, fid):
         """Return (stmts, node_expr) that evaluate to a JSONNode."""
+        if typ.isEnum():
+            typ = typ.underlyingType()
         if typ.isClass():
             return "", "%s.ToJson()" % expr
         typename = typ.typename
@@ -234,7 +239,8 @@ class Xls2CSharpParser(XlsParser):
         fieldName = field.name
         langFieldName = typ.context["fields"][field.index]["name"]
         expr = "this." + langFieldName
-        stmts, node_expr = cls._json_value(field.type, expr, 0, fieldIndex)
+        fieldType = field.type.underlyingType() if field.type.isEnum() else field.type
+        stmts, node_expr = cls._json_value(fieldType, expr, 0, fieldIndex)
         assign = 'jsonNode["%s"] = %s;' % (fieldName, node_expr)
         if stmts:
             return stmts + " " + assign
@@ -242,6 +248,8 @@ class Xls2CSharpParser(XlsParser):
 
     @classmethod
     def _binary_value(cls, typ, expr, depth):
+        if typ.isEnum():
+            typ = typ.underlyingType()
         if typ.isClass():
             return "%s.Serialize(bs);" % expr
         typename = typ.typename
@@ -277,16 +285,21 @@ class Xls2CSharpParser(XlsParser):
     def formatFieldToBinary(cls,typ,fieldIndex):
         field = typ.fields[fieldIndex]
         langFieldName = typ.context["fields"][field.index]["name"]
-        return cls._binary_value(field.type, "this." + langFieldName, 0)
+        fieldType = field.type.underlyingType() if field.type.isEnum() else field.type
+        return cls._binary_value(fieldType, "this." + langFieldName, 0)
 
     @classmethod
     def _read_expr(cls, typ):
+        if typ.isEnum():
+            typ = typ.underlyingType()
         if typ.isClass():
             return "new %s(bs)" % cls.formatClassName(typ.typename)
         return "bs.%s()" % cls.getReadFunc(typ)
 
     @classmethod
     def getReadFunc(cls, typ):
+        if typ.isEnum():
+            typ = typ.underlyingType()
         typename = typ.typename
         readFunc = cls.readFuncs.get(typename)
         if typename == "list":
@@ -333,6 +346,8 @@ class Xls2CSharpParser(XlsParser):
     @classmethod
     def formatType(cls,typ):
         typename = typ.typename
+        if typ.isEnum():
+            return cls.formatType(typ.underlyingType())
         if typ.isClass():
             return typename
         if cls.typeMaps[typename] is None:

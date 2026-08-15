@@ -46,28 +46,28 @@ def is_importable_sheet_title(sheet_title):
 
 
 def compose_table_display_name(sheet):
-    """Table list label: {workbook显示名}-{sheet备注或sheet名}.
+    """Table schema displayName.
 
-    - Sheet title ``Buff@增益`` → label ``增益`` (part after @).
-    - Sheet title ``Data`` → label ``Data``.
-    - Single-sheet workbook with sheet ``data`` (no @) → workbook title only
-      (e.g. ``全局常量``), not ``全局常量-data``.
+    - Sheet title ``data@英雄`` / ``Buff@增益`` → ``英雄`` / ``增益`` (only the part after @)
+    - Sheet title ``data`` (no @) + workbook ``hero@英雄`` → ``英雄`` (workbook @ part)
+    - Other sheets without @ → ``{workbook显示名}-{sheetName}`` when workbook has display, else sheetName
     """
     if sheet is None:
         return None
     wb = (getattr(sheet, "workbookDisplayName", None) or "").strip()
     sheet_disp = (getattr(sheet, "sheetDisplayName", None) or "").strip()
     sheet_name = (getattr(sheet, "sheetName", None) or "").strip()
-    label = sheet_disp or sheet_name
-    if not label:
+    # Sheet @display wins alone (do not prefix workbook display).
+    if sheet_disp:
+        return sheet_disp
+    if not sheet_name:
         return wb or None
     # Classic 1-file-1-table: exact sheet title "data" (case-sensitive).
-    # Multi-sheet books often use "Data" / "Buff" — those always get wb-label.
-    if not sheet_disp and sheet_name == "data" and wb:
+    if sheet_name == "data" and wb:
         return wb
     if wb:
-        return "%s-%s" % (wb, label)
-    return label
+        return "%s-%s" % (wb, sheet_name)
+    return sheet_name
 
 
 class MergeCell(object):
@@ -214,14 +214,20 @@ class Sheet(object):
                 elif i == 4:
                     self.col2constraint[j] = {}
                     typ = self.col2type[j]
-                    if cell.value is not None:
-                        kvs = cell.value.split(self.constraintSeperator)
+                    raw = cell.value
+                    if raw is not None and str(raw).strip() != "":
+                        kvs = str(raw).split(self.constraintSeperator)
                         for kv in kvs:
+                            kv = kv.strip()
+                            if not kv:
+                                continue
                             lst = kv.split("=")
-                            k = lst[0]
+                            k = lst[0].strip()
                             v = None
                             if len(lst) > 1:
                                 v = lst[1]
+                            if not k:
+                                continue
                             if k == "convert" or k == "ref":
                                 if v is None:
                                     raise Exception(self._message(i,j,"expire format '%s=value'" % k))
@@ -539,6 +545,8 @@ class Sheet(object):
 
     def getDefault(self,row,col):
         typ = self.getColType(col)
+        if typ.isEnum():
+            typ = typ.underlyingType()
         typename = typ.typename
         constraint = self.col2constraint.get(col)
         if constraint and "default" in constraint:

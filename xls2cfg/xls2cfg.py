@@ -23,10 +23,12 @@ from XlsParser.XlsImportExport import (
     export_dir,
     import_xlsx_to_dirs,
     write_class_schemas_from_excel,
+    write_enum_schemas_from_excel,
 )
 from XlsParser.Sheet import Sheet, getSheets, is_importable_sheet_title
 from XlsParser.I18NExport import readI18nFile,writeI18nFile
 from XlsParser.XlsClass import readClass
+from XlsParser.XlsEnum import readEnum
 from XlsParser.Config import Config
 from openpyxl import load_workbook
 
@@ -143,6 +145,10 @@ def overlay_config(jsonConfig, options):
         cfg["fieldReadonly"] = choice_to_bool(options.fieldReadonly)
     if options.i18nExportOneFile is not None:
         cfg["i18nExportOneFile"] = choice_to_bool(options.i18nExportOneFile)
+    if options.classDef is not None:
+        cfg["class"] = options.classDef
+    if options.enumDef is not None:
+        cfg["enum"] = options.enumDef
     defaults = parse_json_arg(options.defaultsJson, "--defaults")
     if defaults is not None:
         cfg["defaults"] = defaults
@@ -220,6 +226,8 @@ e.g:
     parser.add_option("--max-col", dest="maxCol", type="int", help="max excel columns, default %s" % Config.maxCol)
     parser.add_option("--defaults", dest="defaultsJson", help='json object, e.g. {"int":0}')
     parser.add_option("--merge", dest="mergeJson", help='json object, e.g. {"toSheetName":["fromSheetName"]}')
+    parser.add_option("--class", dest="classDef", help="__class__ path: dir / __class__.xlsx / __class__.json / stem; default {input}/__class__; xlsx+json merge, json wins")
+    parser.add_option("--enum", dest="enumDef", help="__enum__ path: dir / __enum__.xlsx / __enum__.json / stem; default {input}/__enum__; xlsx+json merge, json wins")
     options,args = parser.parse_args()
 
     export_tags = None
@@ -316,9 +324,12 @@ e.g:
     if i18nLanguage:
         readI18nFile(i18nExportOneFile,i18nDirectory,i18nLanguage,i18nExtension,i18nSeperator)
     sheets = getSheets()
-    # Load types for list<Class> etc.; __class__.xlsx is not a data table (skipped below).
-    # Schema format writes kind=0 class files separately via write_class_schemas_from_excel.
-    readClass(inputDir)
+    # Load types for list<Class>/enum etc.; __class__/__enum__ are not data tables.
+    # Accept xlsx+json (json overrides). Paths: config class/enum or --class/--enum, else inputDir.
+    class_path = jsonConfig.get("class") or inputDir
+    enum_path = jsonConfig.get("enum") or inputDir
+    readEnum(path=enum_path)
+    readClass(path=class_path)
     # 载入所有表
     for root,dirs,files in os.walk(inputDir):
         for dirname in dirs:
@@ -330,8 +341,8 @@ e.g:
             if fileName.startswith("~$"):
                 # 临时文件
                 continue
-            if fileName.startswith("__class__"):
-                # 类定义文件（类型已由 readClass 载入，不作为配表导出行）
+            if fileName.startswith("__class__") or fileName.startswith("__enum__"):
+                # 类/枚举定义文件（类型已载入，不作为配表导出行）
                 continue
             fullFileName = root + "/" + fileName
             if onlyExportChange and fullFileName not in exportFileList:
@@ -390,7 +401,8 @@ e.g:
             parser = Parser(sheet,output)
             parser.parse()
         if outputFormat == "schema":
-            write_class_schemas_from_excel(inputDir, output)
+            write_class_schemas_from_excel(inputDir, output, class_path=class_path)
+            write_enum_schemas_from_excel(inputDir, output, enum_path=enum_path)
         Parser.endParse(output)
 
     # 生成国际化待翻译文本(如果目标文件已存在,则合并翻译文本)

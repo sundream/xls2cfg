@@ -51,10 +51,11 @@ class Xls2GoParser(XlsParser):
     def formatFieldFromJson(cls,typ,fieldIndex):
         field = typ.fields[fieldIndex]
         fieldInitStatment = ""
-        fieldTypename = field.type.typename
+        fieldType = field.type.underlyingType() if field.type.isEnum() else field.type
+        fieldTypename = fieldType.typename
         fieldName = field.name
         langFieldName = typ.context["fields"][field.index]["name"]
-        if field.type.isClass():
+        if fieldType.isClass():
             fieldInitStatment = 'if err := DeserializeStructFromJson(&o.{langFieldName},jsonData["{fieldName}"]); err != nil {{ return err }}'.format(fieldName=fieldName,langFieldName=langFieldName)
         elif fieldTypename == "bool":
             fieldInitStatment = 'if err:= DeserializeBoolFromJson(&o.{langFieldName},jsonData["{fieldName}"]); err != nil {{ return err }}'.format(fieldName=fieldName,langFieldName=langFieldName)
@@ -82,10 +83,11 @@ class Xls2GoParser(XlsParser):
     def formatFieldFromBinary(cls,typ,fieldIndex):
         field = typ.fields[fieldIndex]
         fieldInitStatment = ""
-        fieldTypename = field.type.typename
+        fieldType = field.type.underlyingType() if field.type.isEnum() else field.type
+        fieldTypename = fieldType.typename
         fieldName = field.name
         langFieldName = typ.context["fields"][field.index]["name"]
-        if field.type.isClass():
+        if fieldType.isClass():
             fieldInitStatment = 'if err = ReadStruct(bs,&o.{langFieldName}); err != nil {{ return err }}'.format(fieldName=fieldName,langFieldName=langFieldName)
         elif fieldTypename == "bool":
             fieldInitStatment = 'if o.{langFieldName}, err = bs.ReadBool(); err != nil {{ return err }}'.format(fieldName=fieldName,langFieldName=langFieldName)
@@ -162,6 +164,8 @@ class Xls2GoParser(XlsParser):
     @classmethod
     def formatType(cls,typ):
         typename = typ.typename
+        if typ.isEnum():
+            return cls.formatType(typ.underlyingType())
         if typ.isClass():
             return typename
         if cls.typeMaps[typename] is None:

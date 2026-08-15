@@ -165,7 +165,7 @@ class XlsParser(object):
     @classmethod
     def writeAllClass(cls,outputPath):
         for typename,typ in Type.types.items():
-            if typ.isClass() and typename != "__Field__":
+            if typ.isClass() and typename not in ("__Field__", "__EnumField__"):
                 cls.writeClass(typ,outputPath)
 
     @classmethod

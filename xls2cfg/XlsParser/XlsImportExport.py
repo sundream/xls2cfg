@@ -36,8 +36,10 @@ from XlsParser.Xls2SchemaParser import (
 from XlsParser.ByteStream import ByteStream
 from XlsParser.Type import Type, parse_tags_cell, format_tags_cell
 from XlsParser.XlsClass import readClass
+from XlsParser.XlsEnum import readEnum
 
 CLASS_WORKBOOK = "__class__.xlsx"
+ENUM_WORKBOOK = "__enum__.xlsx"
 
 EXCEL_DEFAULT_COL_WIDTH = 8.43
 EXPORT_COL_WIDTH = EXCEL_DEFAULT_COL_WIDTH * 1.5
@@ -45,21 +47,6 @@ EXPORT_COL_WIDTH = EXCEL_DEFAULT_COL_WIDTH * 1.5
 STRING_ALIASES = frozenset(
     {"string", "i18nstring", "lang", "json", "bit32", "bit64", "bit"}
 )
-
-
-def schema_display_name(schema: dict, fallback: str = "") -> str:
-    return (
-        schema.get("displayName")
-        or schema.get("comment")
-        or fallback
-        or ""
-    )
-
-
-def field_display_name(field: dict, fallback: str = "") -> str:
-    if not field:
-        return fallback or ""
-    return field.get("displayName") or field.get("comment") or fallback or ""
 
 
 def field_remarks(field: dict) -> str:
@@ -327,8 +314,7 @@ def paint_header_black(ws, max_row: int, max_col: int) -> None:
     for r in range(1, max_row + 1):
         for c in range(1, max_col + 1):
             cell = ws.cell(row=r, column=c)
-            if cell.value is None:
-                cell.value = ""
+            # Keep None as None (empty "" breaks constraint-row parsing).
             cell.fill = fill
             cell.font = font
             cell.border = border
@@ -394,9 +380,14 @@ def default_xlsx_path(schema: dict, out_dir: Path) -> Path:
 
 
 def sheet_title_from_schema(schema: dict) -> str:
+    """Excel sheet tab title.
+
+    ``data`` sheets stay as ``data`` (display comes from workbook ``name@中文``).
+    Other sheets may be ``SheetName@displayName``.
+    """
     sheet_name = schema.get("sheetName") or "data"
-    disp = schema.get("displayName") or ""
-    if disp:
+    disp = schema.get("displayName") or schema.get("comment") or ""
+    if sheet_name != "data" and disp:
         title = "%s@%s" % (sheet_name, disp)
     else:
         title = sheet_name
@@ -405,8 +396,15 @@ def sheet_title_from_schema(schema: dict) -> str:
     return title[:31] or "data"
 
 
+def is_enum_schema(schema: dict) -> bool:
+    """Enum schemas are kind=0 with enumType."""
+    return bool(schema and schema.get("enumType"))
+
+
 def is_class_schema(schema: dict) -> bool:
     if not schema:
+        return False
+    if is_enum_schema(schema):
         return False
     kind = schema.get("kind")
     if kind == KIND_CLASS:
@@ -416,10 +414,10 @@ def is_class_schema(schema: dict) -> bool:
     workbook = os.path.basename(schema.get("workbook") or "")
     if workbook == CLASS_WORKBOOK:
         return True
-    # Legacy class schemas: name == className (tables use different casing)
+    # Class schemas: name == typename (tables usually differ, e.g. entity_Hero vs Entity_Hero)
     name = schema.get("name") or ""
-    class_name = schema.get("className") or ""
-    return bool(name) and name == class_name
+    type_name = schema.get("typename") or ""
+    return bool(name) and name == type_name
 
 
 def fill_worksheet_from_schema(ws, schema: dict, data) -> None:
@@ -450,7 +448,7 @@ def fill_worksheet_from_schema(ws, schema: dict, data) -> None:
                     n,
                     typ,
                     cell_val,
-                    field_display_name(f, n),
+                    f.get("displayName") or f.get("comment") or n,
                     format_tags_cell(f.get("tags"), f.get("group")),
                     "",
                 ]
@@ -489,7 +487,7 @@ def fill_worksheet_from_schema(ws, schema: dict, data) -> None:
         constraints_row = []
         tags_row = []
         for f, width, _start in col_specs:
-            remarks_row.append(field_display_name(f, f.get("name") or ""))
+            remarks_row.append(f.get("displayName") or f.get("comment") or f.get("name") or "")
             remarks_row.extend([""] * (width - 1))
             names_row.append(f.get("name"))
             names_row.extend([None] * (width - 1))
@@ -557,6 +555,8 @@ def fill_worksheet_from_schema(ws, schema: dict, data) -> None:
 def write_excel_from_schema_json(schema: dict, data, xlsx_out: Path) -> Path:
     if openpyxl is None:
         raise SystemExit("openpyxl required: pip install openpyxl")
+    if is_enum_schema(schema):
+        return write_enum_workbook([schema], Path(xlsx_out))
     if is_class_schema(schema):
         return write_class_workbook([schema], Path(xlsx_out))
 
@@ -617,8 +617,8 @@ def write_class_workbook(class_schemas, xlsx_out: Path) -> Path:
     ws = wb.active
     ws.title = "data"
 
-    remarks = ["类型名", "备注", "字段定义"] + [None] * (field_width - 1)
-    names = ["type", "comment", "fields"] + [None] * (field_width - 1)
+    remarks = ["类型名", "备注名", "字段定义"] + [None] * (field_width - 1) + ["##end"]
+    names = ["typename", "comment", "fields"] + [None] * (field_width - 1)
     types = ["string", "string", "list<__Field__>"] + [None] * (field_width - 1)
     constraints = [None, None]
     for i in range(field_width):
@@ -631,7 +631,8 @@ def write_class_workbook(class_schemas, xlsx_out: Path) -> Path:
     ws.append(constraints)
     ws.append(tags)
 
-    end_col = 2 + field_width
+    fields_end = 2 + field_width
+    end_col = fields_end + 1  # includes ##end
     # Style before merge (MergedCell values are read-only).
     paint_header_black(ws, 5, end_col)
     apply_export_column_widths(ws, end_col)
@@ -641,25 +642,97 @@ def write_class_workbook(class_schemas, xlsx_out: Path) -> Path:
                 start_row=row_idx,
                 start_column=3,
                 end_row=row_idx,
-                end_column=end_col,
+                end_column=fields_end,
             )
 
     for schema in schemas:
         fields = [f for f in (schema.get("fields") or []) if f.get("name")]
         line = [
-            schema.get("name") or schema.get("className") or "",
-            schema_display_name(schema, ""),
+            schema.get("name") or schema.get("typename") or "",
+            schema.get("displayName") or schema.get("comment") or "",
         ]
         for f in fields:
             tags_val = format_tags_cell(f.get("tags"), f.get("group"))
             line.extend([
                 f.get("name") or "",
                 f.get("type") or "int32",
-                field_display_name(f, ""),
+                f.get("displayName") or f.get("comment") or "",
                 tags_val if tags_val else None,
             ])
-        while len(line) < end_col:
+        while len(line) < fields_end:
             line.append(None)
+        line.append(None)  # ##end column
+        ws.append(line[:end_col])
+
+    save_workbook(wb, xlsx_out)
+    return xlsx_out
+
+
+def write_enum_workbook(enum_schemas, xlsx_out: Path) -> Path:
+    """Restore __enum__.xlsx from enum schemas (kind=0 + enumType, fields as list<__EnumField__>)."""
+    if openpyxl is None:
+        raise SystemExit("openpyxl required: pip install openpyxl")
+    xlsx_out = Path(xlsx_out)
+    if xlsx_out.is_dir() or xlsx_out.suffix.lower() != ".xlsx":
+        xlsx_out = Path(xlsx_out) / ENUM_WORKBOOK
+    xlsx_out.parent.mkdir(parents=True, exist_ok=True)
+
+    schemas = sorted(enum_schemas, key=lambda s: s.get("name") or "")
+    max_fields = 1
+    for s in schemas:
+        max_fields = max(max_fields, len(s.get("fields") or []))
+    field_width = max_fields * 4
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "data"
+
+    remarks = ["类型名", "备注名", "底层类型", "可组合", "字段定义"] + [None] * (field_width - 1) + ["##end"]
+    names = ["typename", "comment", "enumType", "flags", "fields"] + [None] * (field_width - 1)
+    types = ["string", "string", "string", "bool", "list<__EnumField__>"] + [None] * (field_width - 1)
+    constraints = [None, None, None, None]
+    for i in range(field_width):
+        constraints.append([".name", ".value", ".comment", ".tags"][i % 4])
+    tags = [None] * (4 + field_width)
+
+    ws.append(remarks)
+    ws.append(names)
+    ws.append(types)
+    ws.append(constraints)
+    ws.append(tags)
+
+    fields_end = 4 + field_width
+    end_col = fields_end + 1  # includes ##end
+    paint_header_black(ws, 5, end_col)
+    apply_export_column_widths(ws, end_col)
+    if field_width > 1:
+        for row_idx in (1, 2, 3):
+            ws.merge_cells(
+                start_row=row_idx,
+                start_column=5,
+                end_row=row_idx,
+                end_column=fields_end,
+            )
+
+    for schema in schemas:
+        items = [f for f in (schema.get("fields") or []) if f.get("name")]
+        line = [
+            schema.get("name") or schema.get("typename") or "",
+            schema.get("displayName") or schema.get("comment") or "",
+            schema.get("enumType") or "int32",
+            1 if schema.get("flags") else 0,
+        ]
+        for f in items:
+            tags_val = format_tags_cell(f.get("tags"), f.get("group"))
+            line.extend([
+                f.get("name") or "",
+                f.get("value") if f.get("value") is not None else None,
+                f.get("displayName") or f.get("comment") or "",
+                tags_val if tags_val else None,
+            ])
+        while len(line) < fields_end:
+            line.append(None)
+        line.append(None)  # ##end column
         ws.append(line[:end_col])
 
     save_workbook(wb, xlsx_out)
@@ -732,7 +805,7 @@ def register_class_schemas_from_dir(schema_dir: Path) -> None:
             continue
         if not is_class_schema(obj):
             continue
-        class_name = obj.get("className") or obj.get("name")
+        class_name = obj.get("typename") or ""
         if not class_name:
             continue
         existing = Type.get(class_name)
@@ -746,13 +819,14 @@ def register_class_schemas_from_dir(schema_dir: Path) -> None:
             fields.append({
                 "type": f.get("type") or "int32",
                 "name": n,
-                "comment": f.get("displayName") or "",
+                "comment": f.get("displayName") or f.get("comment") or "",
                 "tags": None,
                 "remarks": f.get("remarks") or "",
                 "group": f.get("group"),
             })
         if not fields:
             continue
+        type_comment = obj.get("displayName") or obj.get("comment") or ""
         if isinstance(existing, Type):
             existing.fields = []
             existing.idFieldIdx = -1
@@ -761,12 +835,50 @@ def register_class_schemas_from_dir(schema_dir: Path) -> None:
                     f["type"], f["name"], comment=f["comment"], remarks=f["remarks"],
                     group=f.get("group"),
                 )
-            if obj.get("displayName"):
-                existing.comment = obj.get("displayName")
+            if type_comment:
+                existing.comment = type_comment
         else:
             typ = Type.createClass(class_name, fields)
-            if obj.get("displayName"):
-                typ.comment = obj.get("displayName")
+            if type_comment:
+                typ.comment = type_comment
+
+
+def register_enum_schemas_from_dir(schema_dir: Path) -> None:
+    """Load enum schemas (kind=0 + enumType) into Type registry."""
+    schema_dir = Path(schema_dir)
+    if not schema_dir.is_dir():
+        return
+    for path in sorted(schema_dir.glob("*.json")):
+        try:
+            obj = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not is_enum_schema(obj):
+            continue
+        enum_name = obj.get("typename") or ""
+        if not enum_name:
+            continue
+        existing = Type.get(enum_name)
+        if isinstance(existing, Type) and existing.isEnum():
+            continue
+        items = []
+        for f in obj.get("fields") or []:
+            n = f.get("name")
+            if not n:
+                continue
+            items.append({
+                "name": n,
+                "value": f.get("value"),
+                "comment": f.get("displayName") or f.get("comment") or "",
+                "tags": None,
+            })
+        Type.createEnum(
+            enum_name,
+            enumType=obj.get("enumType") or "int32",
+            items=items,
+            comment=obj.get("displayName") or obj.get("comment") or None,
+            flags=bool(obj.get("flags")),
+        )
 
 
 def export_one(
@@ -778,6 +890,7 @@ def export_one(
 ) -> Path:
     schema_path = Path(schema_path)
     register_class_schemas_from_dir(schema_path.parent)
+    register_enum_schemas_from_dir(schema_path.parent)
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     data = load_export_data(
         schema, json_path=json_path, binary_path=binary_path, tags=tags
@@ -801,11 +914,16 @@ def export_dir(from_dir: Path, export_xlsx: Path, tags=None) -> list:
         raise SystemExit("schema dir not found: %s" % schema_dir)
 
     register_class_schemas_from_dir(schema_dir)
+    register_enum_schemas_from_dir(schema_dir)
     groups = {}  # workbook filename -> [(sheetIndex, name, schema, data)]
     class_schemas = []
+    enum_schemas = []
 
     for schema_path in sorted(schema_dir.glob("*.json")):
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        if is_enum_schema(schema):
+            enum_schemas.append(schema)
+            continue
         if is_class_schema(schema):
             class_schemas.append(schema)
             continue
@@ -836,6 +954,10 @@ def export_dir(from_dir: Path, export_xlsx: Path, tags=None) -> list:
 
     if class_schemas:
         path = write_class_workbook(class_schemas, export_xlsx / CLASS_WORKBOOK)
+        results.append(str(path))
+        print("export", path)
+    if enum_schemas:
+        path = write_enum_workbook(enum_schemas, export_xlsx / ENUM_WORKBOOK)
         results.append(str(path))
         print("export", path)
     return results
@@ -906,7 +1028,7 @@ def write_class_schema(typ, schema_dir, json_dir=None, sheet_index=0):
     Does not write json data (kind=0 is schema/ClassDecl only).
     ``json_dir`` is accepted for call-site compatibility but ignored.
     """
-    if typ is None or not typ.isClass() or typ.typename == "__Field__":
+    if typ is None or not typ.isClass() or typ.typename in ("__Field__", "__EnumField__"):
         return ""
     schema = typ.to_schema(name=typ.typename, kind=KIND_CLASS, class_name=typ.typename)
     out = {
@@ -915,8 +1037,30 @@ def write_class_schema(typ, schema_dir, json_dir=None, sheet_index=0):
     }
     if schema.get("displayName"):
         out["displayName"] = schema["displayName"]
-    out["className"] = typ.typename
+    out["typename"] = typ.typename
     out["workbook"] = CLASS_WORKBOOK
+    out["sheetName"] = "data"
+    out["sheetIndex"] = sheet_index
+    out["fields"] = schema["fields"]
+    return _write_class_schema_dict(out, schema_dir, json_dir=None)
+
+
+def write_enum_schema(typ, schema_dir, sheet_index=0):
+    """Write enum schema (kind=0 + enumType). Filename = type name."""
+    if typ is None or not typ.isEnum():
+        return ""
+    schema = typ.to_schema(name=typ.typename, kind=KIND_CLASS, class_name=typ.typename)
+    out = {
+        "kind": KIND_CLASS,
+        "name": typ.typename,
+    }
+    if schema.get("displayName"):
+        out["displayName"] = schema["displayName"]
+    out["typename"] = typ.typename
+    out["enumType"] = schema.get("enumType") or "int32"
+    if schema.get("flags"):
+        out["flags"] = True
+    out["workbook"] = ENUM_WORKBOOK
     out["sheetName"] = "data"
     out["sheetIndex"] = sheet_index
     out["fields"] = schema["fields"]
@@ -937,65 +1081,108 @@ def _write_class_schema_dict(out, schema_dir, json_dir=None):
     return schema_path
 
 
-def write_class_schemas_from_excel(excel_dir, schema_dir):
-    """Write kind=0 schemas for all classes in __class__.xlsx (full fields, ignore tags).
+def write_class_schemas_from_excel(excel_dir, schema_dir, class_path=None):
+    """Write kind=0 schemas for all classes in __class__ xlsx+json (json overrides).
 
     Does not mutate the Type registry used by data export.
+    ``class_path`` defaults to ``excel_dir``.
     """
-    from XlsParser.XlsClass import createBuiltinClass
+    from XlsParser.XlsClass import collect_class_defs
     from XlsParser.Type import Field as TypeField
 
-    excel_path = os.path.join(excel_dir, CLASS_WORKBOOK)
-    if not os.path.isfile(excel_path):
-        return []
-    if not Type.isClassName("__Field__"):
-        createBuiltinClass()
-
+    base = class_path if class_path is not None else excel_dir
     prev_tags = Config.tags
     Config.tags = []
     written = []
     try:
-        wb = load_workbook(filename=excel_path, data_only=True)
-        try:
-            sheet = Sheet(wb["data"], CLASS_WORKBOOK, "data", 0)
-            for row in sheet.rows:
-                typename = row[0]
-                comment = row[1]
-                raw_fields = row[2] or []
-                fields = []
-                for f in raw_fields:
-                    if not f.get("type") or not f.get("name"):
-                        continue
-                    entry = {
-                        "name": f["name"],
-                        "type": f["type"],
-                    }
-                    if f.get("comment"):
-                        entry["displayName"] = f["comment"]
-                    tags, group = parse_tags_cell(f.get("tags"))
-                    tags = TypeField.format_tags(tags)
-                    if tags:
-                        entry["tags"] = tags
-                    if group:
-                        entry["group"] = group
-                    fields.append(entry)
-                if not typename or not fields:
+        defs = collect_class_defs(base, apply_tags_filter=False)
+        for typename, entry in defs.items():
+            fields = []
+            for f in entry.get("fields") or []:
+                if not f.get("type") or not f.get("name"):
                     continue
-                out = {
-                    "kind": KIND_CLASS,
-                    "name": typename,
+                item = {
+                    "name": f["name"],
+                    "type": f["type"],
                 }
-                if comment:
-                    out["displayName"] = comment
-                out["className"] = typename
-                out["workbook"] = CLASS_WORKBOOK
-                out["sheetName"] = "data"
-                out["sheetIndex"] = 0
-                out["fields"] = fields
-                _write_class_schema_dict(out, schema_dir, json_dir=None)
-                written.append(typename)
-        finally:
-            wb.close()
+                if f.get("comment"):
+                    item["displayName"] = f["comment"]
+                tags = TypeField.format_tags(f.get("tags"))
+                if tags:
+                    item["tags"] = tags
+                if f.get("group"):
+                    item["group"] = f["group"]
+                fields.append(item)
+            if not fields:
+                continue
+            out = {
+                "kind": KIND_CLASS,
+                "name": typename,
+            }
+            if entry.get("displayName"):
+                out["displayName"] = entry["displayName"]
+            out["typename"] = typename
+            out["workbook"] = CLASS_WORKBOOK
+            out["sheetName"] = "data"
+            out["sheetIndex"] = 0
+            out["fields"] = fields
+            _write_class_schema_dict(out, schema_dir, json_dir=None)
+            written.append(typename)
+    finally:
+        Config.tags = prev_tags
+    return written
+
+
+def write_enum_schemas_from_excel(excel_dir, schema_dir, enum_path=None):
+    """Write enum schemas for all enums in __enum__ xlsx+json (json overrides)."""
+    from XlsParser.XlsEnum import collect_enum_defs
+    from XlsParser.Type import Field as TypeField
+
+    base = enum_path if enum_path is not None else excel_dir
+    prev_tags = Config.tags
+    Config.tags = []
+    written = []
+    try:
+        defs = collect_enum_defs(base, apply_tags_filter=False)
+        for typename, entry in defs.items():
+            fields = []
+            for f in entry.get("fields") or []:
+                if not f.get("name"):
+                    continue
+                raw_val = f.get("value")
+                value = raw_val
+                if raw_val is not None and raw_val != "":
+                    ok, parsed = Type.parse_enum_int(raw_val)
+                    if ok:
+                        value = parsed
+                item = {
+                    "name": f["name"],
+                    "value": value,
+                }
+                if f.get("comment"):
+                    item["displayName"] = f["comment"]
+                tags = TypeField.format_tags(f.get("tags"))
+                if tags:
+                    item["tags"] = tags
+                if f.get("group"):
+                    item["group"] = f["group"]
+                fields.append(item)
+            out = {
+                "kind": KIND_CLASS,
+                "name": typename,
+            }
+            if entry.get("displayName"):
+                out["displayName"] = entry["displayName"]
+            out["typename"] = typename
+            out["enumType"] = entry.get("enumType") or "int32"
+            if entry.get("flags"):
+                out["flags"] = True
+            out["workbook"] = ENUM_WORKBOOK
+            out["sheetName"] = "data"
+            out["sheetIndex"] = 0
+            out["fields"] = fields
+            _write_class_schema_dict(out, schema_dir, json_dir=None)
+            written.append(typename)
     finally:
         Config.tags = prev_tags
     return written
@@ -1009,9 +1196,9 @@ def import_xlsx_to_dirs(
 ):
     """Import workbook sheet(s) to schema+json dirs (no tags filter).
 
-    Loads sibling __class__.xlsx before parse so user class types resolve.
-    Referenced __class__ types are written as kind=0 schemas (filename = class name).
-    Importing __class__.xlsx itself writes all class schemas (not a data table).
+    Loads sibling __class__/__enum__.xlsx before parse so user types resolve.
+    Referenced class/enum types are written as kind=0 schemas (enums have enumType).
+    Importing __class__/__enum__.xlsx itself writes those schemas only.
     """
     if load_workbook is None:
         raise SystemExit("openpyxl required: pip install openpyxl")
@@ -1029,9 +1216,28 @@ def import_xlsx_to_dirs(
 
     excel_dir = os.path.dirname(xlsx_path)
     fileName = os.path.basename(xlsx_path)
+    enum_names = readEnum(excel_dir) or []
     class_names = readClass(excel_dir) or []
 
-    # Importing the class workbook: emit kind=0 schemas only.
+    if fileName.startswith("__enum__"):
+        deps = []
+        for name in enum_names:
+            path = write_enum_schema(Type.get(name), schema_dir, sheet_index=0)
+            if path:
+                deps.append({
+                    "name": name,
+                    "kind": KIND_CLASS,
+                    "schema": path,
+                })
+        print(json.dumps({
+            "ok": True,
+            "name": ENUM_WORKBOOK,
+            "tables": [],
+            "deps": deps,
+            "count": len(deps),
+        }, ensure_ascii=False))
+        return deps
+
     if fileName.startswith("__class__"):
         deps = []
         for idx, name in enumerate(class_names):
@@ -1092,6 +1298,21 @@ def import_xlsx_to_dirs(
         needed = collect_needed_class_names(type_strings, class_names)
         for name in sorted(needed):
             path = write_class_schema(Type.get(name), schema_dir, json_dir)
+            if path:
+                deps.append({
+                    "name": name,
+                    "kind": KIND_CLASS,
+                    "schema": path,
+                })
+    if enum_names:
+        enum_set = set(enum_names)
+        needed_enums = set()
+        for ts in type_strings:
+            for atom in iter_type_atoms(ts):
+                if atom in enum_set:
+                    needed_enums.add(atom)
+        for name in sorted(needed_enums):
+            path = write_enum_schema(Type.get(name), schema_dir)
             if path:
                 deps.append({
                     "name": name,

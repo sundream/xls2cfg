@@ -215,6 +215,8 @@ class ByteStream:
             file.write(self.buffer[:self.pos])
 
     def WriteValue(self,fieldType,value):
+        if fieldType.isEnum():
+            fieldType = fieldType.underlyingType()
         fieldTypename = fieldType.typename
         if fieldTypename == "bool":
             self.WriteBool(value)
@@ -266,6 +268,8 @@ class ByteStream:
             raise Exception("unkown type: " + fieldTypename)
 
     def ReadValue(self,fieldType):
+        if fieldType.isEnum():
+            fieldType = fieldType.underlyingType()
         fieldTypename = fieldType.typename
         if fieldTypename == "bool":
             value = self.ReadBool()

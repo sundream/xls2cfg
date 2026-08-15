@@ -4,9 +4,10 @@
 """Export Global/table-compatible schema JSON (all columns; ignore tags filter).
 
 Schema top-level:
-  kind, name, displayName?, className, workbook, sheetName, sheetIndex, fields[]
+  kind, name, displayName?, typename, workbook, sheetName, sheetIndex, fields[]
+  enum (kind=0 + enumType): optional flags; fields[].name/value/displayName/tags
 
-fields: name, type, displayName, remarks, constraint, tags, group, layout
+fields (table/class): name, type, displayName, remarks, constraint, tags, group, layout
 Type uses Excel raw type text (fullTypename). Aliases apply only to internal typename.
 
 layout (optional):
@@ -184,7 +185,7 @@ class Xls2SchemaParser(XlsParser):
             out["displayName"] = display
         elif schema.get("displayName"):
             out["displayName"] = schema["displayName"]
-        out["className"] = className
+        out["typename"] = className
         out["workbook"] = self.sheet.xlsFilename
         out["sheetName"] = self.sheet.sheetName
         out["sheetIndex"] = self.sheet.sheetIndex

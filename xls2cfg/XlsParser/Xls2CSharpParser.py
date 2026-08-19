@@ -123,9 +123,45 @@ class Xls2CSharpParser(XlsParser):
         elif fieldTypename == "json":
             fieldInitStatment = 'this.{langFieldName} = jsonNode["{fieldName}"];'.format(fieldName=fieldName,langFieldName=langFieldName)
         elif fieldTypename == "list":
-            fieldInitStatment = 'this.{langFieldName} = JSON.Parse<{fieldFullTypename}>(jsonNode["{fieldName}"]);'.format(fieldName=fieldName,langFieldName=langFieldName,fieldFullTypename=cls.formatType(fieldType))
+            if fieldType.valueType is not None and fieldType.valueType.isClass():
+                className = cls.formatClassName(fieldType.valueType.typename)
+                valueType = cls.formatType(fieldType.valueType)
+                fieldInitStatment = (
+                    '{{ this.{langFieldName} = new List<{valueType}>(); '
+                    'var _ln{fid} = jsonNode["{fieldName}"]; '
+                    'if (_ln{fid} != null && !_ln{fid}.IsNull && _ln{fid}.IsArray) {{ '
+                    'foreach (JSONNode _le{fid} in _ln{fid}) {{ '
+                    'this.{langFieldName}.Add(new {className}(_le{fid})); }} }} }}'
+                ).format(
+                    fieldName=fieldName,
+                    langFieldName=langFieldName,
+                    valueType=valueType,
+                    className=className,
+                    fid=field.index,
+                )
+            else:
+                fieldInitStatment = 'this.{langFieldName} = JSON.Parse<{fieldFullTypename}>(jsonNode["{fieldName}"]);'.format(fieldName=fieldName,langFieldName=langFieldName,fieldFullTypename=cls.formatType(fieldType))
         elif fieldTypename == "map":
-            fieldInitStatment = 'this.{langFieldName} = JSON.Parse<{fieldFullTypename}>(jsonNode["{fieldName}"]);'.format(fieldName=fieldName,langFieldName=langFieldName,fieldFullTypename=cls.formatType(fieldType))
+            if fieldType.valueType is not None and fieldType.valueType.isClass():
+                className = cls.formatClassName(fieldType.valueType.typename)
+                keyType = cls.formatType(fieldType.keyType)
+                valueType = cls.formatType(fieldType.valueType)
+                fieldInitStatment = (
+                    '{{ this.{langFieldName} = new Dictionary<{keyType},{valueType}>(); '
+                    'var _kn{fid} = jsonNode["{fieldName}"]; '
+                    'if (_kn{fid} != null && !_kn{fid}.IsNull && _kn{fid}.IsObject) {{ '
+                    'foreach (var _ke{fid} in _kn{fid}.Linq) {{ '
+                    'this.{langFieldName}[_ke{fid}.Key] = new {className}(_ke{fid}.Value); }} }} }}'
+                ).format(
+                    fieldName=fieldName,
+                    langFieldName=langFieldName,
+                    keyType=keyType,
+                    valueType=valueType,
+                    className=className,
+                    fid=field.index,
+                )
+            else:
+                fieldInitStatment = 'this.{langFieldName} = JSON.Parse<{fieldFullTypename}>(jsonNode["{fieldName}"]);'.format(fieldName=fieldName,langFieldName=langFieldName,fieldFullTypename=cls.formatType(fieldType))
         else:
             raise Exception("unsupported type: %s" % field.type.fullTypename)
         return fieldInitStatment

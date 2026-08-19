@@ -202,6 +202,19 @@ class Type(object):
             return "list<%s>" % Type.__convTypename(fullTypename[:pos])
         return fullTypename
 
+    @staticmethod
+    def topLevelComma(s):
+        """Index of first comma not inside <...>; -1 if none."""
+        depth = 0
+        for i, ch in enumerate(s or ""):
+            if ch == "<":
+                depth += 1
+            elif ch == ">":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                return i
+        return -1
+
     def __fromString(self,fullTypename):
         keyType = None
         valueType = None
@@ -221,7 +234,7 @@ class Type(object):
             vtype = kvtype
             valueType = Type.getOrCreate(vtype)
         elif typename == "map":
-            commaPos = kvtype.find(",")
+            commaPos = Type.topLevelComma(kvtype)
             if commaPos < 0:
                 raise Exception("invalid type: %s" % fullTypename)
             ktype = kvtype[0:commaPos]

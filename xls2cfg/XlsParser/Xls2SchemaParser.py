@@ -30,13 +30,24 @@ KIND_2D = 2
 
 
 def format_constraint(constraint, seperator=";"):
-    """Rebuild Excel constraint cell text (excludes .key → layout.keys)."""
+    """Rebuild Excel constraint cell text (excludes .key → layout.keys).
+
+    Implicit flags (Sheet auto-inject):
+      ``_unique_implicit`` — id 列默认 unique，不导出
+      ``_not_null_implicit`` — 仅写了 unique 时自动补的 not_null，不导出
+    Excel 显式写了 ``unique;not_null`` 时两者都会导出。
+    """
     if not constraint:
         return ""
+    skip_unique = bool(constraint.get("_unique_implicit"))
+    skip_not_null = bool(constraint.get("_not_null_implicit"))
     parts = []
     for k, v in constraint.items():
-        if k.startswith("."):
-            # Moved to field.layout.keys
+        if k.startswith(".") or k.startswith("_"):
+            continue
+        if k == "unique" and skip_unique:
+            continue
+        if k == "not_null" and skip_not_null:
             continue
         if k in ("unique", "not_null", "not_localize"):
             if v:

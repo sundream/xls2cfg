@@ -74,6 +74,14 @@ def apply_json_config(jsonConfig):
         Config.maxCol = jsonConfig.get("maxCol")
     if "namespace" in jsonConfig:
         Config.namespace = jsonConfig.get("namespace")
+    if "import_class_xlsx" in jsonConfig:
+        try:
+            mode = int(jsonConfig.get("import_class_xlsx") or 0)
+        except (TypeError, ValueError):
+            raise Exception("import_class_xlsx must be 0, 1 or 2")
+        if mode not in (0, 1, 2):
+            raise Exception("import_class_xlsx must be 0, 1 or 2")
+        Config.import_class_xlsx = mode
 
 def parse_csv_list(value):
     if value is None:
@@ -149,6 +157,8 @@ def overlay_config(jsonConfig, options):
         cfg["class"] = options.classDef
     if options.enumDef is not None:
         cfg["enum"] = options.enumDef
+    if options.importClassXlsx is not None:
+        cfg["import_class_xlsx"] = options.importClassXlsx
     defaults = parse_json_arg(options.defaultsJson, "--defaults")
     if defaults is not None:
         cfg["defaults"] = defaults
@@ -226,8 +236,9 @@ e.g:
     parser.add_option("--max-col", dest="maxCol", type="int", help="max excel columns, default %s" % Config.maxCol)
     parser.add_option("--defaults", dest="defaultsJson", help='json object, e.g. {"int":0}')
     parser.add_option("--merge", dest="mergeJson", help='json object, e.g. {"toSheetName":["fromSheetName"]}')
-    parser.add_option("--class", dest="classDef", help="__class__ path: dir / __class__.xlsx / __class__.json / stem; default {input}/__class__; xlsx+json merge, json wins")
-    parser.add_option("--enum", dest="enumDef", help="__enum__ path: dir / __enum__.xlsx / __enum__.json / stem; default {input}/__enum__; xlsx+json merge, json wins")
+    parser.add_option("--class", dest="classDef", help="__class__ path: dir / __class__.xlsx / __class__.json / stem; default {input}/__class__")
+    parser.add_option("--enum", dest="enumDef", help="__enum__ path: dir / __enum__.xlsx / __enum__.json / stem; default {input}/__enum__")
+    parser.add_option("--import-class-xlsx", dest="importClassXlsx", type="int", help="0=json only, export __class__/__enum__.json (default); 1=also import xlsx; 2=xlsx only, do not export json")
     options,args = parser.parse_args()
 
     export_tags = None

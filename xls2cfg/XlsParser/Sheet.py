@@ -288,8 +288,9 @@ class Sheet(object):
                             else:
                                 raise Exception(self._message(i,j,"invalid constraint,value='%s',constraint seperator is '%s'" % (cell.value,self.constraintSeperator)))
                     if self.getConstraint(j,"unique") and not self.getConstraint(j,"not_null"):
-                        # unique列自带not_null约束
+                        # unique列自带not_null约束（仅校验；导出 schema 不写，见 _not_null_implicit）
                         self.col2constraint[j]["not_null"] = True
+                        self.col2constraint[j]["_not_null_implicit"] = True
                 elif i == 5:
                     mergeCell = self.mergeCells.get(j)
                     if mergeCell and len(mergeCell.mapkeys) > 0:
@@ -310,8 +311,13 @@ class Sheet(object):
                     elif j not in self.col2tags:
                         self.col2tags[j] = None
 
+        # id 列默认 unique（仅校验）；Excel 未写 unique 时不导出到 schema
         if self.splitCol == -1 and not self.getConstraint(0,"unique"):
             self.col2constraint[0]["unique"] = True
+            self.col2constraint[0]["_unique_implicit"] = True
+            if not self.getConstraint(0,"not_null"):
+                self.col2constraint[0]["not_null"] = True
+                self.col2constraint[0]["_not_null_implicit"] = True
 
         for i,row in enumerate(self.sheet.iter_rows(min_row=self.headerRow+1,max_row=self.maxRow,values_only=True)):
             if row[0] is None or (type(row[0]) == str and row[0].isspace()):

@@ -1,10 +1,10 @@
 #coding: utf-8
 #@author sundream
 #@date 2026-08-07
-"""Excel <-> schema/json/binary import and export (MapEditor round-trip).
+"""Excel <-> schema/json/binary round-trip (MapEditor).
 
-- import_xlsx_to_dirs: xlsx workbook -> schema/ + json/ (+ kind=1 class deps)
-- export_one / export_dir: schema + json or binary -> xlsx
+- write_data_from_xlsx: xlsx -> {output}/schema + {output}/json
+- write_xlsx_from_data / write_xlsx_from_dir: schema + json|binary -> xlsx
 - field.layout restores merge-split columns (P1 keys / P2 element-per-column)
 """
 
@@ -111,6 +111,7 @@ def _enum_defs_to_json_list(defs):
             item["flags"] = True
         else:
             item["flags"] = False
+        item["exportType"] = bool(entry.get("exportType"))
         fields = []
         for f in entry.get("fields") or []:
             if not f.get("name"):
@@ -178,29 +179,16 @@ def _merge_type_defs(collect_xlsx, collect_json, basename, excel_dir, schema_jso
     return defs
 
 
-def _defs_to_workbook_schemas(json_list):
-    schemas = []
-    for item in json_list or []:
-        schema = dict(item)
-        schema["name"] = item.get("typename") or item.get("name") or ""
-        schemas.append(schema)
-    return schemas
-
-
-def _emit_type_bundle(json_list, json_path, xlsx_path, write_xlsx):
-    """Write merged type bundle json/xlsx according to gen_class_xlsx."""
+def _write_type_bundle_json(json_list, json_path):
     results = []
-    if Config.gen_class_json_file() and json_path:
+    if json_path and json_list:
         _write_json_list(json_path, json_list)
         results.append(json_path)
-    if Config.gen_class_excel_file() and xlsx_path and json_list:
-        write_xlsx(_defs_to_workbook_schemas(json_list), Path(xlsx_path))
-        results.append(str(xlsx_path))
     return results
 
 
 def _emit_class_enum_bundles(excel_dir, schema_dir, schema_wins):
-    """Merge schema __class__/__enum__.json with local xlsx+json, then generate files."""
+    """Merge __class__/__enum__ xlsx+json with schema bundles; write json only."""
     from XlsParser.XlsClass import CLASS_BASENAME, collect_class_defs_from_xlsx, collect_class_defs_from_json
     from XlsParser.XlsEnum import ENUM_BASENAME, collect_enum_defs_from_xlsx, collect_enum_defs_from_json
 
@@ -229,40 +217,54 @@ def _emit_class_enum_bundles(excel_dir, schema_dir, schema_wins):
         json_path = class_schema_json if schema_dir else (
             os.path.join(excel_dir, CLASS_JSON) if excel_dir else None
         )
-        xlsx_path = os.path.join(excel_dir, CLASS_WORKBOOK) if excel_dir else None
-        results.extend(_emit_type_bundle(class_json_list, json_path, xlsx_path, write_class_workbook))
-        if Config.gen_class_json_file() and excel_dir and schema_dir:
+        results.extend(_write_type_bundle_json(class_json_list, json_path))
+        if excel_dir and schema_dir:
             excel_json = os.path.join(excel_dir, CLASS_JSON)
             if os.path.abspath(excel_json) != os.path.abspath(json_path):
-                _write_json_list(excel_json, class_json_list)
-                results.append(excel_json)
+                results.extend(_write_type_bundle_json(class_json_list, excel_json))
         if schema_dir:
             _remove_kind0_schemas_for_workbook(schema_dir, CLASS_WORKBOOK)
     if enum_json_list:
         json_path = enum_schema_json if schema_dir else (
             os.path.join(excel_dir, ENUM_JSON) if excel_dir else None
         )
-        xlsx_path = os.path.join(excel_dir, ENUM_WORKBOOK) if excel_dir else None
-        results.extend(_emit_type_bundle(enum_json_list, json_path, xlsx_path, write_enum_workbook))
-        if Config.gen_class_json_file() and excel_dir and schema_dir:
+        results.extend(_write_type_bundle_json(enum_json_list, json_path))
+        if excel_dir and schema_dir:
             excel_json = os.path.join(excel_dir, ENUM_JSON)
             if os.path.abspath(excel_json) != os.path.abspath(json_path):
-                _write_json_list(excel_json, enum_json_list)
-                results.append(excel_json)
+                results.extend(_write_type_bundle_json(enum_json_list, excel_json))
         if schema_dir:
             _remove_kind0_schemas_for_workbook(schema_dir, ENUM_WORKBOOK)
     return results, class_defs, enum_defs
 
 
 def _copy_type_bundles(schema_dir, dest_dir):
-    """Export schema type bundles into dest excel dir (merge local, gen_class_xlsx)."""
-    results, _class_defs, _enum_defs = _emit_class_enum_bundles(dest_dir, schema_dir, schema_wins=True)
-    return results
+    """data->xlsx: merge type bundles into dest_dir/__class__.json and __enum__.json only."""
+    from XlsParser.XlsClass import CLASS_BASENAME, collect_class_defs_from_xlsx, collect_class_defs_from_json
+    from XlsParser.XlsEnum import ENUM_BASENAME, collect_enum_defs_from_xlsx, collect_enum_defs_from_json
 
+    dest_dir = os.path.abspath(dest_dir)
+    schema_dir = os.path.abspath(schema_dir)
+    os.makedirs(dest_dir, exist_ok=True)
 
-def _sync_type_bundles_from_excel_dir(excel_dir, schema_dir):
-    """Import: merge schema json with local xlsx+json, generate per gen_class_xlsx."""
-    results, _class_defs, _enum_defs = _emit_class_enum_bundles(excel_dir, schema_dir, schema_wins=False)
+    class_schema_json = os.path.join(schema_dir, CLASS_JSON)
+    enum_schema_json = os.path.join(schema_dir, ENUM_JSON)
+    class_defs = _merge_type_defs(
+        collect_class_defs_from_xlsx, collect_class_defs_from_json,
+        CLASS_BASENAME, dest_dir, class_schema_json, schema_wins=True,
+    )
+    enum_defs = _merge_type_defs(
+        collect_enum_defs_from_xlsx, collect_enum_defs_from_json,
+        ENUM_BASENAME, dest_dir, enum_schema_json, schema_wins=True,
+    )
+
+    results = []
+    class_json_list = _class_defs_to_json_list(class_defs)
+    if class_json_list:
+        results.extend(_write_type_bundle_json(class_json_list, os.path.join(dest_dir, CLASS_JSON)))
+    enum_json_list = _enum_defs_to_json_list(enum_defs)
+    if enum_json_list:
+        results.extend(_write_type_bundle_json(enum_json_list, os.path.join(dest_dir, ENUM_JSON)))
     return results
 
 
@@ -377,6 +379,11 @@ def format_int_with_base(val, int_base):
 
 def format_cell_value(typ: str, val, int_base=None):
     if val is None or val == "":
+        t = (typ or "").strip()
+        if t.startswith("list<"):
+            return "[]"
+        if t.startswith("map<"):
+            return "{}"
         return "" if is_excel_text_type(typ) else None
     if int_base in (16, 2) and not isinstance(val, (list, dict, bool)):
         return format_int_with_base(val, int_base)
@@ -833,7 +840,7 @@ def write_class_workbook(class_schemas, xlsx_out: Path) -> Path:
         xlsx_out = Path(xlsx_out) / CLASS_WORKBOOK
     xlsx_out.parent.mkdir(parents=True, exist_ok=True)
 
-    schemas = sorted(class_schemas, key=lambda s: s.get("name") or "")
+    schemas = list(class_schemas)
     max_fields = 1
     for s in schemas:
         max_fields = max(max_fields, len(s.get("fields") or []))
@@ -913,13 +920,13 @@ def write_enum_workbook(enum_schemas, xlsx_out: Path) -> Path:
     ws = wb.active
     ws.title = "data"
 
-    remarks = ["类型名", "备注名", "底层类型", "可组合", "字段定义"] + [None] * (field_width - 1) + ["##end"]
-    names = ["typename", "comment", "enumType", "flags", "fields"] + [None] * (field_width - 1)
-    types = ["string", "string", "string", "bool", "list<__EnumField__>"] + [None] * (field_width - 1)
-    constraints = [None, None, None, None]
+    remarks = ["类型名", "备注名", "底层类型", "可组合", "导出类型", "字段定义"] + [None] * (field_width - 1) + ["##end"]
+    names = ["typename", "comment", "enumType", "flags", "exportType", "fields"] + [None] * (field_width - 1)
+    types = ["string", "string", "string", "bool", "bool", "list<__EnumField__>"] + [None] * (field_width - 1)
+    constraints = [None, None, None, None, None]
     for i in range(field_width):
         constraints.append([".name", ".value", ".comment", ".tags"][i % 4])
-    tags = [None] * (4 + field_width)
+    tags = [None] * (5 + field_width)
 
     ws.append(remarks)
     ws.append(names)
@@ -927,7 +934,7 @@ def write_enum_workbook(enum_schemas, xlsx_out: Path) -> Path:
     ws.append(constraints)
     ws.append(tags)
 
-    fields_end = 4 + field_width
+    fields_end = 5 + field_width
     end_col = fields_end + 1  # includes ##end
     paint_header_black(ws, 5, end_col)
     apply_export_column_widths(ws, end_col)
@@ -935,7 +942,7 @@ def write_enum_workbook(enum_schemas, xlsx_out: Path) -> Path:
         for row_idx in (1, 2, 3):
             ws.merge_cells(
                 start_row=row_idx,
-                start_column=5,
+                start_column=6,
                 end_row=row_idx,
                 end_column=fields_end,
             )
@@ -947,6 +954,7 @@ def write_enum_workbook(enum_schemas, xlsx_out: Path) -> Path:
             schema.get("displayName") or schema.get("comment") or "",
             schema.get("enumType") or "int32",
             1 if schema.get("flags") else 0,
+            1 if schema.get("exportType") else 0,
         ]
         for f in items:
             tags_val = format_tags_cell(f.get("tags"), f.get("group"))
@@ -1118,45 +1126,58 @@ def register_enum_schemas_from_dir(schema_dir: Path) -> None:
             items=items,
             comment=obj.get("displayName") or obj.get("comment") or None,
             flags=bool(obj.get("flags")),
+            exportType=bool(obj.get("exportType")),
         )
 
 
-def export_one(
+def write_xlsx_from_data(
     schema_path: Path,
-    xlsx_out: Path,
+    out_xlsx_dir: Path,
     json_path=None,
     binary_path=None,
     tags=None,
 ) -> Path:
+    """Single table: schema + json|binary -> {out_xlsx_dir}/{schema.workbook}."""
     schema_path = Path(schema_path)
-    register_class_schemas_from_dir(schema_path.parent)
+    out_xlsx_dir = Path(out_xlsx_dir)
+    out_xlsx_dir.mkdir(parents=True, exist_ok=True)
     register_enum_schemas_from_dir(schema_path.parent)
+    register_class_schemas_from_dir(schema_path.parent)
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     data = load_export_data(
         schema, json_path=json_path, binary_path=binary_path, tags=tags
     )
-    path = write_excel_from_schema_json(schema, data, Path(xlsx_out))
-    _copy_type_bundles(schema_path.parent, Path(xlsx_out).parent)
+    xlsx_out = default_xlsx_path(schema, out_xlsx_dir)
+    path = write_excel_from_schema_json(schema, data, xlsx_out)
+    _copy_type_bundles(schema_path.parent, out_xlsx_dir)
     return path
 
 
-def export_dir(from_dir: Path, export_xlsx: Path, tags=None) -> list:
-    """Batch: {from_dir}/schema + json/ or binary/ -> export_xlsx dir.
+def write_xlsx_from_dir(
+    schema_dir: Path,
+    out_xlsx_dir: Path,
+    json_dir=None,
+    binary_dir=None,
+    tags=None,
+) -> list:
+    """Batch: schema_dir + json_dir|binary_dir -> out_xlsx_dir.
 
     Tables with the same workbook are merged into one multi-sheet xlsx (sheetIndex order).
     __class__.json / __enum__.json are copied as-is (not rebuilt as xlsx).
     """
-    schema_dir = Path(from_dir) / "schema"
-    json_dir = Path(from_dir) / "json"
-    binary_dir = Path(from_dir) / "binary"
-    export_xlsx = Path(export_xlsx)
-    export_xlsx.mkdir(parents=True, exist_ok=True)
+    schema_dir = Path(schema_dir)
+    json_dir = Path(json_dir) if json_dir else None
+    binary_dir = Path(binary_dir) if binary_dir else None
+    out_xlsx_dir = Path(out_xlsx_dir)
+    out_xlsx_dir.mkdir(parents=True, exist_ok=True)
     results = []
     if not schema_dir.is_dir():
         raise SystemExit("schema dir not found: %s" % schema_dir)
+    if not json_dir and not binary_dir:
+        raise SystemExit("--from-json-dir or --from-binary-dir required")
 
-    register_class_schemas_from_dir(schema_dir)
     register_enum_schemas_from_dir(schema_dir)
+    register_class_schemas_from_dir(schema_dir)
     groups = {}  # workbook filename -> [(sheetIndex, name, schema, data)]
 
     for schema_path in sorted(schema_dir.glob("*.json")):
@@ -1168,23 +1189,23 @@ def export_dir(from_dir: Path, export_xlsx: Path, tags=None) -> list:
         if is_enum_schema(schema) or is_class_schema(schema):
             continue
         name = schema_path.stem
-        json_path = json_dir / (name + ".json")
-        binary_path = binary_dir / (name + ".bytes")
+        json_path = (json_dir / (name + ".json")) if json_dir else None
+        binary_path = (binary_dir / (name + ".bytes")) if binary_dir else None
         data = load_export_data(
             schema,
-            json_path=json_path if json_path.exists() else None,
-            binary_path=binary_path if binary_path.exists() else None,
+            json_path=json_path if json_path and json_path.exists() else None,
+            binary_path=binary_path if binary_path and binary_path.exists() else None,
             tags=tags,
         )
         wb_name = os.path.basename(
-            schema.get("workbook") or default_xlsx_path(schema, export_xlsx).name
+            schema.get("workbook") or default_xlsx_path(schema, out_xlsx_dir).name
         )
         sheet_index = schema.get("sheetIndex", 0)
         groups.setdefault(wb_name, []).append((sheet_index, name, schema, data))
 
     for wb_name, items in sorted(groups.items()):
         items.sort(key=lambda x: (x[0], x[1]))
-        out = export_xlsx / wb_name
+        out = out_xlsx_dir / wb_name
         path = write_multi_sheet_workbook(
             [(idx, schema, data) for idx, _name, schema, data in items],
             out,
@@ -1192,11 +1213,11 @@ def export_dir(from_dir: Path, export_xlsx: Path, tags=None) -> list:
         results.append(str(path))
         print("export", path)
 
-    results.extend(_copy_type_bundles(schema_dir, export_xlsx))
+    results.extend(_copy_type_bundles(schema_dir, out_xlsx_dir))
     return results
 
 
-# ---- import: xlsx -> schema + json ----
+# ---- xlsx -> schema + json ----
 
 def _top_level_comma(s):
     depth = 0
@@ -1293,6 +1314,8 @@ def write_enum_schema(typ, schema_dir, sheet_index=0):
     out["enumType"] = schema.get("enumType") or "int32"
     if schema.get("flags"):
         out["flags"] = True
+    if schema.get("exportType"):
+        out["exportType"] = True
     out["workbook"] = ENUM_WORKBOOK
     out["sheetName"] = "data"
     out["sheetIndex"] = sheet_index
@@ -1356,37 +1379,37 @@ def write_enum_schemas_from_excel(excel_dir, schema_dir, enum_path=None):
     return written
 
 
-def import_xlsx_to_dirs(
+def write_data_from_xlsx(
     xlsx_path,
-    schema_dir,
-    json_dir,
-    sheet_name=None,
+    output_dir,
+    output_formats,
+    parser_for_format,
 ):
-    """Import workbook sheet(s) to schema+json dirs (no tags filter).
+    """Write one workbook to {output}/{format}/ for every requested format.
 
-    Merges schema/__class__.json|__enum__.json with local xlsx+json (local json last).
-    gen_class_xlsx: 0=json+xlsx, 1=json only, 2=xlsx only.
+    All importable sheets are written. Nested/dep types from __class__/__enum__
+    are registered so codegen compiles, but are not written unless this xlsx
+    *is* __class__/__enum__.
     """
     if load_workbook is None:
         raise SystemExit("openpyxl required: pip install openpyxl")
 
-    Config.tags = []
-    Config.pretty = True
-    Config.classNameFirstUpper = True
-    xlsx_path = os.path.abspath(xlsx_path)
-    schema_dir = os.path.abspath(schema_dir)
-    json_dir = os.path.abspath(json_dir)
-    if not os.path.isdir(schema_dir):
-        os.makedirs(schema_dir)
-    if not os.path.isdir(json_dir):
-        os.makedirs(json_dir)
+    from XlsParser.XlsParser import XlsParser
 
+    formats = [f.strip() for f in (output_formats or []) if f and str(f).strip()]
+    if not formats:
+        raise SystemExit("output-formats required with --from-xlsx")
+
+    xlsx_path = os.path.abspath(xlsx_path)
+    output_dir = os.path.abspath(output_dir)
     excel_dir = os.path.dirname(xlsx_path)
     fileName = os.path.basename(xlsx_path)
     enum_names = readEnum(excel_dir) or []
     class_names = readClass(excel_dir) or []
 
     if fileName.startswith("__enum__") or fileName.startswith("__class__"):
+        schema_dir = os.path.join(output_dir, "schema")
+        os.makedirs(schema_dir, exist_ok=True)
         from XlsParser.XlsClass import register_class_defs
         from XlsParser.XlsEnum import register_enum_defs
         _results, class_defs, enum_defs = _emit_class_enum_bundles(
@@ -1395,17 +1418,20 @@ def import_xlsx_to_dirs(
         if fileName.startswith("__enum__"):
             register_enum_defs(enum_defs)
             defs = enum_defs
-            out_path = os.path.join(schema_dir, ENUM_JSON)
+            bundle = os.path.join(schema_dir, ENUM_JSON)
             wb_name = ENUM_WORKBOOK
         else:
             register_class_defs(class_defs)
             defs = class_defs
-            out_path = os.path.join(schema_dir, CLASS_JSON)
+            bundle = os.path.join(schema_dir, CLASS_JSON)
             wb_name = CLASS_WORKBOOK
+        code_formats = [f for f in formats if f != "schema"]
+        if code_formats:
+            export_code_from_schema(bundle, output_dir, code_formats, parser_for_format)
         deps = [{
             "name": name,
             "kind": KIND_CLASS,
-            "schema": out_path,
+            "schema": bundle,
         } for name in defs]
         print(json.dumps({
             "ok": True,
@@ -1417,51 +1443,66 @@ def import_xlsx_to_dirs(
         return deps
 
     wb = load_workbook(filename=xlsx_path, data_only=True)
-    tables = []
-    type_strings = []
+    loaded = []
     try:
         for idx, sn in enumerate(wb.sheetnames):
             if not is_importable_sheet_title(sn):
                 continue
-            logical, _ = split_at_display(sn)
-            if sheet_name and sn != sheet_name and logical != sheet_name:
-                continue
-            sheet = Sheet(wb[sn], fileName, sn, idx)
-            schema_parser = Xls2SchemaParser(sheet, schema_dir)
-            schema_parser.parse()
-            json_parser = Xls2JsonParser(sheet, json_dir)
-            json_parser.parse()
-            schema_path = os.path.join(schema_dir, sheet.filename + ".json")
-            tables.append({
-                "name": sheet.filename,
-                "kind": KIND_1D if sheet.singleton else KIND_2D,
-                "sheet": sheet.sheetName,
-                "sheetIndex": sheet.sheetIndex,
-                "workbook": sheet.xlsFilename,
-                "schema": schema_path,
-                "data": os.path.join(json_dir, sheet.filename + ".json"),
-            })
-            try:
-                schema_obj = json.loads(Path(schema_path).read_text(encoding="utf-8"))
-                for f in schema_obj.get("fields") or []:
-                    type_strings.append(f.get("type") or "")
-            except Exception:
-                pass
+            loaded.append(Sheet(wb[sn], fileName, sn, idx))
     finally:
         wb.close()
-    if not tables:
+    if not loaded:
         raise SystemExit("workbook has no importable sheets")
 
-    _sync_type_bundles_from_excel_dir(excel_dir, schema_dir)
+    XlsParser.ignoreGenTables = True
+    tables = []
+    type_strings = []
+    sheet_typenames = []
+    for fmt in formats:
+        Parser = parser_for_format(fmt)
+        if Parser is None:
+            raise Exception("unknown outputFormat: %s" % fmt)
+        out = os.path.join(output_dir, fmt)
+        os.makedirs(out, exist_ok=True)
+        fmt_types = []
+        for sheet in loaded:
+            parser = Parser(sheet, out)
+            parser.parse()
+            typ = getattr(parser, "type", None)
+            if isinstance(typ, Type) and typ.typename not in fmt_types:
+                fmt_types.append(typ.typename)
+        if "writeClass" in Parser.__dict__:
+            for name in fmt_types:
+                typ = Type.get(name)
+                if isinstance(typ, Type) and typ.isClass():
+                    Parser.writeClass(typ, out)
+        if fmt == formats[0]:
+            sheet_typenames = list(fmt_types)
+            for sheet in loaded:
+                tables.append({
+                    "name": sheet.filename,
+                    "kind": KIND_1D if sheet.singleton else KIND_2D,
+                    "sheet": sheet.sheetName,
+                    "sheetIndex": sheet.sheetIndex,
+                    "workbook": sheet.xlsFilename,
+                    "schema": os.path.join(output_dir, "schema", sheet.filename + ".json") if "schema" in formats else None,
+                    "data": os.path.join(output_dir, "json", sheet.filename + ".json") if "json" in formats else None,
+                })
+                for col in range(0, sheet.maxCol):
+                    typ = sheet.col2type.get(col)
+                    if typ is not None:
+                        type_strings.append(typ.fullTypename)
+
     deps = []
     if class_names:
         needed = collect_needed_class_names(type_strings, class_names)
-        class_schema = os.path.join(schema_dir, CLASS_JSON)
         for name in sorted(needed):
+            if name in sheet_typenames:
+                continue
             deps.append({
                 "name": name,
                 "kind": KIND_CLASS,
-                "schema": class_schema,
+                "schema": os.path.join(excel_dir, CLASS_JSON),
             })
     if enum_names:
         enum_set = set(enum_names)
@@ -1470,12 +1511,11 @@ def import_xlsx_to_dirs(
             for atom in iter_type_atoms(ts):
                 if atom in enum_set:
                     needed_enums.add(atom)
-        enum_schema = os.path.join(schema_dir, ENUM_JSON)
         for name in sorted(needed_enums):
             deps.append({
                 "name": name,
                 "kind": KIND_CLASS,
-                "schema": enum_schema,
+                "schema": os.path.join(excel_dir, ENUM_JSON),
             })
 
     print(json.dumps({
@@ -1486,3 +1526,179 @@ def import_xlsx_to_dirs(
         "count": len(tables),
     }, ensure_ascii=False))
     return tables
+
+
+def _load_schema_file_objects(path: Path):
+    from XlsParser.TypeDefPath import load_types_json_list
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if isinstance(data, list):
+        return [x for x in data if isinstance(x, dict)]
+    if not isinstance(data, dict):
+        return []
+    if path.name in TYPE_BUNDLE_FILES or isinstance(data.get("types"), list):
+        return load_types_json_list(str(path))
+    if data.get("typename") or data.get("fields") is not None or data.get("enumType"):
+        return [data]
+    return load_types_json_list(str(path))
+
+
+def _collect_schema_type_objects(schema_path):
+    path = Path(schema_path)
+    if not path.exists():
+        raise SystemExit("schema path not found: %s" % path)
+    if path.is_file():
+        return _load_schema_file_objects(path)
+    objs = []
+    for p in sorted(path.glob("*.json")):
+        objs.extend(_load_schema_file_objects(p))
+    return objs
+
+
+def _schema_fields_to_type_fields(fields):
+    out = []
+    for f in fields or []:
+        name = f.get("name")
+        ftype = f.get("type")
+        if not name or not ftype:
+            continue
+        out.append({
+            "type": ftype,
+            "name": name,
+            "comment": f.get("displayName") or f.get("comment") or "",
+            "tags": f.get("tags"),
+            "remarks": f.get("remarks") or "",
+            "group": f.get("group"),
+        })
+    return out
+
+
+def _is_builtin_type_atom(atom):
+    return atom in Type.basicTypes or atom in Type.containerTypes or atom == "json"
+
+
+def export_code_from_schema(schema_path, output_dir, output_formats, parser_for_format):
+    """Generate language types from schema dir or a single schema json.
+
+    Dependent types are registered as stubs when needed, but are not written.
+    Language is decided by ``output_formats`` (csharp/go have class/enum codegen).
+    """
+    from XlsParser.XlsParser import XlsParser
+
+    objs = _collect_schema_type_objects(schema_path)
+    if not objs:
+        raise SystemExit("no schema types found: %s" % schema_path)
+
+    enum_objs = [o for o in objs if is_enum_schema(o)]
+    class_objs = [o for o in objs if not is_enum_schema(o)]
+    export_names = []
+
+    for o in enum_objs:
+        name = o.get("typename")
+        if not name:
+            continue
+        export_names.append(name)
+        Type.unregister(name)
+        items = []
+        for f in o.get("fields") or []:
+            n = f.get("name")
+            if not n:
+                continue
+            items.append({
+                "name": n,
+                "value": f.get("value"),
+                "comment": f.get("displayName") or f.get("comment") or "",
+                "tags": f.get("tags"),
+            })
+        Type.createEnum(
+            name,
+            enumType=o.get("enumType") or "int32",
+            items=items,
+            comment=o.get("displayName") or o.get("comment") or None,
+            flags=bool(o.get("flags")),
+            exportType=bool(o.get("exportType")),
+        )
+
+    class_names = []
+    for o in class_objs:
+        name = o.get("typename")
+        if not name:
+            continue
+        class_names.append(name)
+        export_names.append(name)
+
+    known = set(class_names)
+    for name, typ in list(Type.types.items()):
+        if isinstance(typ, Type) and typ.isEnum():
+            known.add(name)
+
+    for o in class_objs:
+        for f in o.get("fields") or []:
+            for atom in iter_type_atoms(f.get("type") or ""):
+                if _is_builtin_type_atom(atom) or atom in known:
+                    continue
+                existing = Type.get(atom)
+                if isinstance(existing, Type):
+                    continue
+                Type.createClass(atom)
+                known.add(atom)
+
+    for o in class_objs:
+        name = o.get("typename")
+        if not name:
+            continue
+        Type.unregister(name)
+        typ = Type.createClass(name, _schema_fields_to_type_fields(o.get("fields")))
+        typ.comment = o.get("displayName") or o.get("comment") or None
+        if o.get("kind") == KIND_1D:
+            typ.singleton = True
+        if not getattr(typ, "singleton", False) and typ.fields:
+            id_idx = 0
+            for i, f in enumerate(typ.fields):
+                if f.name == "id":
+                    id_idx = i
+                    break
+            typ.setIdField(id_idx)
+
+    XlsParser.ignoreGenTables = True
+    written = []
+    for fmt in output_formats:
+        Parser = parser_for_format(fmt)
+        if Parser is None:
+            raise Exception("unknown outputFormat: %s" % fmt)
+        can_write_class = "writeClass" in Parser.__dict__
+        can_write_enum = "writeEnum" in Parser.__dict__
+        if not can_write_class and not can_write_enum:
+            print("skip format %s (no type codegen)" % fmt)
+            continue
+        out = os.path.join(output_dir, fmt)
+        os.makedirs(out, exist_ok=True)
+        for name in export_names:
+            typ = Type.get(name)
+            if not isinstance(typ, Type):
+                continue
+            if typ.isEnum():
+                if not getattr(typ, "exportType", False):
+                    print("skip enum %s (exportType=false)" % name)
+                    continue
+                if can_write_enum:
+                    Parser.writeEnum(typ, out)
+                    written.append("%s/%s" % (fmt, name))
+                else:
+                    print("skip enum %s for format %s" % (name, fmt))
+                continue
+            if typ.isClass() and can_write_class:
+                Parser.writeClass(typ, out)
+                written.append("%s/%s" % (fmt, name))
+            else:
+                print("skip type %s for format %s" % (name, fmt))
+    print(json.dumps({
+        "ok": True,
+        "schema": str(schema_path),
+        "written": written,
+        "count": len(written),
+    }, ensure_ascii=False))
+    return written

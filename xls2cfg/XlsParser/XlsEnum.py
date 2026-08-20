@@ -42,20 +42,15 @@ def createBuiltinEnumField():
 
 createBuiltinEnumField()
 
-def parse_enum_flags_cell(value):
-    """Parse __enum__.xlsx flags cell to bool (empty → False)."""
+def parse_bool(value):
+    """Accept true/false/1/0/\"1\"/\"0\"; empty → False."""
     if value is None or value == "":
         return False
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return bool(int(value))
-    s = str(value).strip().lower()
-    if s in ("1", "true", "yes", "y"):
+    if value is True or value == 1 or value == "1":
         return True
-    if s in ("0", "false", "no", "n"):
+    if value is False or value == 0 or value == "0":
         return False
-    raise Exception("invalid enum flags '%s' (expect bool)" % value)
+    raise Exception("invalid bool '%s' (expect true/false/1/0)" % value)
 
 def _xlsx_field_to_json_shape(f):
     """Excel nested .comment → displayName for unified normalize."""
@@ -95,20 +90,18 @@ def _normalize_enum_def(obj, apply_tags_filter=True):
         return None
     display = obj.get("displayName") or obj.get("comment") or ""
     enumType = obj.get("enumType") or "int32"
-    flags = obj.get("flags")
-    if not isinstance(flags, bool):
-        flags = parse_enum_flags_cell(flags)
     items = _normalize_enum_fields(obj.get("fields"), apply_tags_filter=apply_tags_filter)
     return {
         "typename": typename,
         "displayName": display,
         "enumType": enumType,
-        "flags": bool(flags),
+        "flags": parse_bool(obj.get("flags")),
+        "exportType": parse_bool(obj.get("exportType")),
         "fields": items,
     }
 
 def collect_enum_defs_from_xlsx(xlsx_path, apply_tags_filter=True):
-    """Columns: typename, comment, enumType, flags, fields — comment column → displayName."""
+    """Columns: typename, comment, enumType, flags, exportType, fields — comment column → displayName."""
     defs = OrderedDict()
     if not xlsx_path or not os.path.isfile(xlsx_path):
         return defs
@@ -116,15 +109,16 @@ def collect_enum_defs_from_xlsx(xlsx_path, apply_tags_filter=True):
     try:
         sheet = Sheet(wb["data"], os.path.basename(xlsx_path), "data")
         for row in sheet.rows:
-            raw_fields = row[4] if len(row) > 4 else []
+            raw_fields = row[5]
             if not isinstance(raw_fields, list):
                 raw_fields = []
             raw_fields = [_xlsx_field_to_json_shape(f) for f in raw_fields]
             raw = {
                 "typename": row[0],
                 "displayName": row[1],
-                "enumType": row[2] if len(row) > 2 else "int32",
-                "flags": row[3] if len(row) > 3 else False,
+                "enumType": row[2],
+                "flags": row[3],
+                "exportType": row[4],
                 "fields": raw_fields,
             }
             entry = _normalize_enum_def(raw, apply_tags_filter=apply_tags_filter)
@@ -165,6 +159,7 @@ def register_enum_defs(defs):
             items=entry.get("fields") or [],
             comment=entry.get("displayName"),
             flags=bool(entry.get("flags")),
+            exportType=bool(entry.get("exportType")),
         )
         loaded.append(typename)
     return loaded

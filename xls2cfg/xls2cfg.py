@@ -19,11 +19,12 @@ from XlsParser.Xls2CSharpParser import Xls2CSharpParser
 from XlsParser.Xls2GoParser import Xls2GoParser
 from XlsParser.Xls2SchemaParser import Xls2SchemaParser
 from XlsParser.XlsImportExport import (
-    export_one,
-    export_dir,
-    import_xlsx_to_dirs,
+    write_xlsx_from_data,
+    write_xlsx_from_dir,
+    write_data_from_xlsx,
     write_class_schemas_from_excel,
     write_enum_schemas_from_excel,
+    export_code_from_schema,
 )
 from XlsParser.Sheet import Sheet, getSheets, is_importable_sheet_title
 from XlsParser.I18NExport import readI18nFile,writeI18nFile
@@ -74,14 +75,6 @@ def apply_json_config(jsonConfig):
         Config.maxCol = jsonConfig.get("maxCol")
     if "namespace" in jsonConfig:
         Config.namespace = jsonConfig.get("namespace")
-    if "import_class_xlsx" in jsonConfig:
-        try:
-            mode = int(jsonConfig.get("import_class_xlsx") or 0)
-        except (TypeError, ValueError):
-            raise Exception("import_class_xlsx must be 0, 1 or 2")
-        if mode not in (0, 1, 2):
-            raise Exception("import_class_xlsx must be 0, 1 or 2")
-        Config.import_class_xlsx = mode
 
 def parse_csv_list(value):
     if value is None:
@@ -103,8 +96,13 @@ def cfg_bool_choice(value):
 def overlay_config(jsonConfig, options):
     """CLI 显式传入的项覆盖 --config。未传为 None，不覆盖。"""
     cfg = dict(jsonConfig or {})
-    if options.inputDir is not None:
-        cfg["input"] = options.inputDir
+    input_dir = options.inputDir
+    if getattr(options, "fromXlsxDir", None) is not None:
+        if input_dir is not None and input_dir != options.fromXlsxDir:
+            raise Exception("--input and --from-xlsx-dir both set but differ")
+        input_dir = options.fromXlsxDir
+    if input_dir is not None:
+        cfg["input"] = input_dir
     if options.outputDir is not None:
         cfg["output"] = options.outputDir
     outputFormats = parse_csv_list(options.outputFormats)
@@ -157,8 +155,6 @@ def overlay_config(jsonConfig, options):
         cfg["class"] = options.classDef
     if options.enumDef is not None:
         cfg["enum"] = options.enumDef
-    if options.importClassXlsx is not None:
-        cfg["import_class_xlsx"] = options.importClassXlsx
     defaults = parse_json_arg(options.defaultsJson, "--defaults")
     if defaults is not None:
         cfg["defaults"] = defaults
@@ -192,28 +188,34 @@ def main():
 e.g:
     python %prog --config=config.json
     python %prog --input=../Excel --output=../Output/Client --output-formats=csharp,binary,json,schema --tags=c
-    python %prog --from-schema=schema.json --from-json=data.json --out=out.xlsx
-    python %prog --from-schema=schema.json --from-binary=data.bytes --out=out.xlsx
-    python %prog --from-dir=../Output/Client --export-xlsx=../Excel
-    python %prog --import-xlsx=a.xlsx --schema-dir=schema --json-dir=json"""
+    python %prog --from-xlsx-dir=../Excel --output=../Output/Client --output-formats=csharp,binary,json,schema --tags=c
+    python %prog --from-schema=schema.json --from-json=data.json --out-xlsx-dir=../Excel
+    python %prog --from-schema=schema.json --from-binary=data.bytes --out-xlsx-dir=../Excel
+    python %prog --from-schema-dir=schema --from-json-dir=json --out-xlsx-dir=../Excel
+    python %prog --from-xlsx=a.xlsx --output=../Output/Client --output-formats=schema,json,binary,csharp
+    python %prog --export-code-by-schema=../Output/Client/schema --config=config-client.json
+    python %prog --export-code-by-schema=../Output/Client/schema/hero.json --output=../Output/Client --output-formats=csharp"""
     parser = optparse.OptionParser(usage=usage,version="%prog 0.0.1")
     parser.add_option("-c","--config",help="[optional] json config file; CLI args override file values")
     parser.add_option("-x","--onlyExportChange",action="store_true",default=False,help="[optional] only export change files")
-    parser.add_option("--from-schema", dest="fromSchema", help="schema json for export")
-    parser.add_option("--from-json", dest="fromJson", help="data json for export to excel")
-    parser.add_option("--from-binary", dest="fromBinary", help="data binary for export to excel")
-    parser.add_option("--out", dest="outPath", help="output xlsx path for export")
-    parser.add_option("--from-dir", dest="fromDir", help="batch export root containing schema/ and json/")
-    parser.add_option("--export-xlsx", dest="exportXlsx", help="batch export xlsx output dir")
-    parser.add_option("--import-xlsx", dest="importXlsx", help="import workbook to schema+json dirs")
-    parser.add_option("--schema-dir", dest="schemaDir", help="schema output dir for --import-xlsx")
-    parser.add_option("--json-dir", dest="jsonDir", help="json output dir for --import-xlsx")
-    parser.add_option("--sheet", dest="sheetName", help="optional sheet name for --import-xlsx")
+    # data+schema -> xlsx (single)
+    parser.add_option("--from-schema", dest="fromSchema", help="single-table schema json -> xlsx (filename from schema.workbook)")
+    parser.add_option("--from-json", dest="fromJson", help="single-table json data -> xlsx")
+    parser.add_option("--from-binary", dest="fromBinary", help="single-table binary data -> xlsx")
+    # data+schema -> xlsx (batch / single share --out-xlsx-dir)
+    parser.add_option("--from-schema-dir", dest="fromSchemaDir", help="schema dir for batch -> xlsx")
+    parser.add_option("--from-json-dir", dest="fromJsonDir", help="json dir for batch -> xlsx")
+    parser.add_option("--from-binary-dir", dest="fromBinaryDir", help="binary dir for batch -> xlsx")
+    parser.add_option("--out-xlsx-dir", dest="outXlsxDir", help="output xlsx directory; filename from schema.workbook")
+    # xlsx -> data/code
+    parser.add_option("--from-xlsx", dest="fromXlsx", help="single xlsx -> {output}/{format}/")
+    parser.add_option("--export-code-by-schema", dest="exportCodeBySchema", help="export code types from schema dir or a single schema json; dependent types are not auto-exported")
     parser.add_option("--tags", dest="exportTags", help="tag filter, comma-separated (e.g. c,s); default empty = all columns")
     # optparse has no required=; input/output/outputFormats are checked after overlay.
     # overlay uses is not None, so do not set default= on these dests (would always override --config).
-    parser.add_option("--input", dest="inputDir", help="excel input dir (config.input); required unless --config")
-    parser.add_option("--output", dest="outputDir", help="generated config output dir (config.output); required unless --config")
+    parser.add_option("--input", dest="inputDir", help="excel input dir (config.input); equivalent to --from-xlsx-dir")
+    parser.add_option("--from-xlsx-dir", dest="fromXlsxDir", help="excel input dir; equivalent to --input")
+    parser.add_option("--output", dest="outputDir", help="output root dir (config.output); required unless --config")
     parser.add_option("--output-formats", dest="outputFormats", help="comma-separated formats: lua,luacvs,go,csharp,py,json,binary,schema; required unless --config")
     parser.add_option("--keywords", dest="keywords", help="comma-separated reserved field names; default matches Config.keywords")
     parser.add_option("--namespace", dest="namespace", help="code namespace, default %s" % Config.namespace)
@@ -238,28 +240,37 @@ e.g:
     parser.add_option("--merge", dest="mergeJson", help='json object, e.g. {"toSheetName":["fromSheetName"]}')
     parser.add_option("--class", dest="classDef", help="__class__ path: dir / __class__.xlsx / __class__.json / stem; default {input}/__class__")
     parser.add_option("--enum", dest="enumDef", help="__enum__ path: dir / __enum__.xlsx / __enum__.json / stem; default {input}/__enum__")
-    parser.add_option("--import-class-xlsx", dest="importClassXlsx", type="int", help="0=json only, export __class__/__enum__.json (default); 1=also import xlsx; 2=xlsx only, do not export json")
     options,args = parser.parse_args()
 
     export_tags = None
     if options.exportTags:
         export_tags = [t.strip() for t in options.exportTags.split(",") if t.strip()]
 
-    # --- import / export modes (no --config required) ---
-    if options.fromDir:
-        if not options.exportXlsx:
-            parser.error("--export-xlsx required with --from-dir")
-        export_dir(options.fromDir, options.exportXlsx, tags=export_tags)
+    # --- round-trip modes (no --config required) ---
+    if options.fromSchemaDir:
+        if not options.outXlsxDir:
+            parser.error("--out-xlsx-dir required with --from-schema-dir")
+        if not options.fromJsonDir and not options.fromBinaryDir:
+            parser.error("--from-json-dir or --from-binary-dir required (both ok; json wins)")
+        write_xlsx_from_dir(
+            options.fromSchemaDir,
+            options.outXlsxDir,
+            json_dir=options.fromJsonDir,
+            binary_dir=options.fromBinaryDir,
+            tags=export_tags,
+        )
         return
 
-    if options.fromSchema and (options.fromJson or options.fromBinary):
-        if not options.outPath:
-            parser.error("--out required with --from-schema")
-        if options.fromJson and options.fromBinary:
-            parser.error("use either --from-json or --from-binary, not both")
-        path = export_one(
+    if options.fromSchema or options.fromJson or options.fromBinary:
+        if not options.fromSchema:
+            parser.error("--from-schema required for single table -> xlsx")
+        if not options.outXlsxDir:
+            parser.error("--out-xlsx-dir required with --from-schema")
+        if not options.fromJson and not options.fromBinary:
+            parser.error("--from-json or --from-binary required (both ok; json wins)")
+        path = write_xlsx_from_data(
             options.fromSchema,
-            options.outPath,
+            options.outXlsxDir,
             json_path=options.fromJson,
             binary_path=options.fromBinary,
             tags=export_tags,
@@ -267,19 +278,64 @@ e.g:
         print(json.dumps({"ok": True, "path": str(path)}, ensure_ascii=False))
         return
 
-    if options.importXlsx:
-        if not options.schemaDir or not options.jsonDir:
-            parser.error("--schema-dir and --json-dir required with --import-xlsx")
-        import_xlsx_to_dirs(
-            options.importXlsx,
-            options.schemaDir,
-            options.jsonDir,
-            options.sheetName,
+    if options.fromXlsx:
+        jsonConfig = {}
+        if options.config is not None:
+            configFileName = options.config
+            if not configFileName.endswith(".json"):
+                parser.error("config file need json")
+                return
+            fp = open(configFileName, "r", encoding="utf-8")
+            jsonConfig = json.loads(fp.read())
+            fp.close()
+        try:
+            jsonConfig = overlay_config(jsonConfig, options)
+        except Exception as e:
+            parser.error(str(e))
+            return
+        outputDir = jsonConfig.get("output")
+        outputFormats = jsonConfig.get("outputFormats")
+        if not outputDir:
+            parser.error("--output required with --from-xlsx")
+        if not outputFormats:
+            parser.error("--output-formats required with --from-xlsx")
+        apply_json_config(jsonConfig)
+        write_data_from_xlsx(
+            options.fromXlsx,
+            outputDir,
+            outputFormats,
+            parser_for_format,
         )
         return
 
-    if options.fromSchema and not options.fromJson and not options.fromBinary:
-        parser.error("--from-json or --from-binary required with --from-schema")
+    if options.exportCodeBySchema:
+        jsonConfig = {}
+        if options.config is not None:
+            configFileName = options.config
+            if not configFileName.endswith(".json"):
+                parser.error("config file need json")
+                return
+            fp = open(configFileName, "r", encoding="utf-8")
+            jsonConfig = json.loads(fp.read())
+            fp.close()
+        try:
+            jsonConfig = overlay_config(jsonConfig, options)
+        except Exception as e:
+            parser.error(str(e))
+            return
+        outputDir = jsonConfig.get("output")
+        outputFormats = jsonConfig.get("outputFormats")
+        if not outputDir:
+            parser.error("'output' required (--output or config.output)")
+        if not outputFormats:
+            parser.error("'outputFormats' required (--output-formats or config.outputFormats)")
+        apply_json_config(jsonConfig)
+        export_code_from_schema(
+            options.exportCodeBySchema,
+            outputDir,
+            outputFormats,
+            parser_for_format,
+        )
         return
 
     # --- forward gen: --config optional, CLI overrides file ---
@@ -300,7 +356,7 @@ e.g:
         return
     inputDir = jsonConfig.get("input")
     if not inputDir:
-        parser.error("'input' required (--input or config.input)")
+        parser.error("'input' required (--input/--from-xlsx-dir or config.input)")
     outputDir = jsonConfig.get("output")
     if not outputDir:
         parser.error("'output' required (--output or config.output)")

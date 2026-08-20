@@ -5,6 +5,7 @@
 from XlsParser.XlsParser import XlsParser
 from XlsParser.Sheet import getSheets
 from XlsParser.Config import Config
+from XlsParser.Type import Type
 from jinja2 import Template
 import os.path
 
@@ -46,6 +47,25 @@ class Xls2GoParser(XlsParser):
         typ.context["formatFieldFromBinary"] = lambda fieldIndex: cls.formatFieldFromBinary(typ,fieldIndex)
         data = template.render(typ.context)
         cls.writeTo(os.path.join(outputPath,typ.context["className"].lower()),data)
+
+    @classmethod
+    def writeEnum(cls,typ,outputPath):
+        enumType = Type.getOrCreate(typ.enumType or "int32")
+        context = {
+            "namespace": cls.formatNamespace(Config.namespace),
+            "className": cls.formatClassName(typ.typename),
+            "classComment": typ.comment or "",
+            "enumType": cls.formatType(enumType),
+            "fields": [],
+        }
+        for item in typ.enumFields or []:
+            context["fields"].append({
+                "name": item.get("name"),
+                "value": item.get("value"),
+                "comment": item.get("comment") or "",
+            })
+        template = Template(open("../runtimes/go/enum.txt", encoding="utf-8").read())
+        cls.writeTo(os.path.join(outputPath, context["className"].lower()), template.render(context))
 
     @classmethod
     def formatFieldFromJson(cls,typ,fieldIndex):
@@ -131,6 +151,7 @@ class Xls2GoParser(XlsParser):
 
     @classmethod
     def endParse(cls,outputPath):
+        cls.writeAllEnum(outputPath)
         cls.writeAllClass(outputPath)
         if cls.ignoreGenTables:
             return

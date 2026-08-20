@@ -218,6 +218,23 @@ class ByteStream:
         if fieldType.isEnum():
             fieldType = fieldType.underlyingType()
         fieldTypename = fieldType.typename
+        # Excel 空单元格是 None，但 binary 按类型定长/定结构写出，不能跳过字段。
+        # 这里填该类型的空值，让运行时读到的结果与“没填”一致（0/""/[]/{} 等）。
+        if value is None:
+            if fieldTypename == "bool":
+                value = False
+            elif fieldTypename in ("string", "i18nstring"):
+                value = ""
+            elif fieldTypename == "list":
+                value = []
+            elif fieldTypename == "map":
+                value = {}
+            elif fieldTypename in ("float", "double"):
+                value = 0.0
+            elif fieldType.isClass():
+                value = {}
+            elif fieldTypename != "json":
+                value = 0
         if fieldTypename == "bool":
             self.WriteBool(value)
         elif fieldTypename == "int8":
@@ -263,7 +280,7 @@ class ByteStream:
             self.WriteJson(value)
         elif fieldType.isClass():
             for clsField in fieldType.fields:
-                self.WriteValue(clsField.type,value[clsField.name])
+                self.WriteValue(clsField.type, value.get(clsField.name))
         else:
             raise Exception("unkown type: " + fieldTypename)
 

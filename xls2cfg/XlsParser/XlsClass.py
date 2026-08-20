@@ -132,16 +132,33 @@ def collect_class_defs(path, apply_tags_filter=True):
     return defs
 
 def register_class_defs(defs):
-    """Register collected class defs into Type. Returns list of typenames."""
+    """Register collected class defs into Type. Returns list of typenames.
+
+    Nested class fields (e.g. BulletModel.offset: Vec3) require the inner
+    type to exist first; retry until the graph settles.
+    """
     if not defs:
         return []
+    pending = list(defs.items())
     loaded = []
-    for typename, entry in defs.items():
-        Type.unregister(typename)
-        Type.createClass(typename, entry["fields"])
-        if entry.get("displayName"):
-            Type.get(typename).comment = entry["displayName"]
-        loaded.append(typename)
+    last_err = None
+    while pending:
+        next_pending = []
+        progress = False
+        for typename, entry in pending:
+            try:
+                Type.unregister(typename)
+                Type.createClass(typename, entry["fields"])
+                if entry.get("displayName"):
+                    Type.get(typename).comment = entry["displayName"]
+                loaded.append(typename)
+                progress = True
+            except Exception as e:
+                last_err = e
+                next_pending.append((typename, entry))
+        if not progress:
+            raise last_err
+        pending = next_pending
     return loaded
 
 def readClass(excelDir=None, path=None):

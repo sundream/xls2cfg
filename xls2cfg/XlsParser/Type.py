@@ -132,9 +132,10 @@ class Type(object):
     #@param items list 枚举项 {name,value,comment,tags}
     #@param comment string 备注
     #@param flags bool 是否可组合（等价 C# [Flags]）
+    #@param exportType bool 是否生成语言枚举类型（writeEnum）
     #@return Type
     @staticmethod
-    def createEnum(enumName, enumType=None, items=None, comment=None, flags=False):
+    def createEnum(enumName, enumType=None, items=None, comment=None, flags=False, exportType=False):
         enumType = (enumType or "int32").strip() or "int32"
         if enumType not in Type.ENUM_REALTYPES:
             raise Exception("invalid enum enumType '%s' for %s (expect %s)" % (
@@ -144,6 +145,7 @@ class Type(object):
         typ._isEnum = True
         typ.enumType = enumType
         typ.flags = bool(flags)
+        typ.exportType = bool(exportType)
         typ.comment = comment
         typ.enumFields = []
         typ.enumByName = {}
@@ -188,6 +190,7 @@ class Type(object):
         self._isEnum = False                        # true=枚举类型
         self.enumType = None                        # 枚举底层整数类型名
         self.flags = False                          # true=[Flags] 位掩码枚举
+        self.exportType = False                     # true=生成语言枚举类型
         self.enumFields = None                       # 枚举项列表
         self.enumByName = None                      # 枚举名 -> 值
         self.enumByValue = None                     # 合法整数值集合
@@ -280,9 +283,14 @@ class Type(object):
     def isClass(self):
         if self.isEnum():
             return False
-        if not self.fields:
+        if self.typename in Type.basicTypes or self.typename in Type.containerTypes:
             return False
-        return True
+        if self.typename == "json":
+            return False
+        if self.fields:
+            return True
+        # stub class (registered but fields not exported)
+        return type(Type.types.get(self.typename)) is Type and self.fullTypename == self.typename
 
     def isEnum(self):
         return bool(getattr(self, "_isEnum", False))
@@ -377,6 +385,8 @@ class Type(object):
             }
             if getattr(self, "flags", False):
                 schema["flags"] = True
+            if getattr(self, "exportType", False):
+                schema["exportType"] = True
             if self.comment:
                 schema["displayName"] = self.comment
             return schema

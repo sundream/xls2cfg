@@ -169,6 +169,17 @@ class XlsParser(object):
                 cls.writeClass(typ,outputPath)
 
     @classmethod
+    def writeAllEnum(cls,outputPath):
+        if "writeEnum" not in cls.__dict__:
+            return
+        for typename,typ in Type.types.items():
+            if not (isinstance(typ, Type) and typ.isEnum()):
+                continue
+            if not getattr(typ, "exportType", False):
+                continue
+            cls.writeEnum(typ,outputPath)
+
+    @classmethod
     def formatNamespace(cls,namespace):
         return namespace
 

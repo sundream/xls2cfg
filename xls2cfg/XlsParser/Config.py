@@ -46,26 +46,6 @@ class Config(object):
         "elif",
     ), True)
     maxCol = 256                    # 最大列数
-    # import_xlsx 生成 __class__/__enum__: 0=json+xlsx, 1=json only, 2=xlsx only
-    gen_class_xlsx = 0
-
-    @staticmethod
-    def gen_class_xlsx_mode():
-        try:
-            mode = int(Config.gen_class_xlsx)
-        except (TypeError, ValueError):
-            return 0
-        if mode not in (0, 1, 2):
-            return 0
-        return mode
-
-    @staticmethod
-    def gen_class_json_file():
-        return Config.gen_class_xlsx_mode() != 2
-
-    @staticmethod
-    def gen_class_excel_file():
-        return Config.gen_class_xlsx_mode() != 1
 
     @staticmethod
     def isNeedExportTags(tags):

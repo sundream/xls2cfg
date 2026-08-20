@@ -5,6 +5,7 @@
 from XlsParser.XlsParser import XlsParser
 from XlsParser.Sheet import getSheets
 from XlsParser.Config import Config
+from XlsParser.Type import Type
 from jinja2 import Template
 import os.path
 
@@ -95,6 +96,26 @@ class Xls2CSharpParser(XlsParser):
         cls.writeTo(os.path.join(outputPath,typ.context["className"]),data)
 
     @classmethod
+    def writeEnum(cls,typ,outputPath):
+        enumType = Type.getOrCreate(typ.enumType or "int32")
+        context = {
+            "namespace": cls.formatNamespace(Config.namespace),
+            "className": cls.formatClassName(typ.typename),
+            "classComment": typ.comment or "",
+            "enumType": cls.formatType(enumType),
+            "flags": bool(typ.flags),
+            "fields": [],
+        }
+        for item in typ.enumFields or []:
+            context["fields"].append({
+                "name": item.get("name"),
+                "value": item.get("value"),
+                "comment": item.get("comment") or "",
+            })
+        template = Template(open("../runtimes/csharp/enum.txt", encoding="utf-8").read())
+        cls.writeTo(os.path.join(outputPath, context["className"]), template.render(context))
+
+    @classmethod
     def formatFieldFromJson(cls,typ,fieldIndex):
         field = typ.fields[fieldIndex]
         fieldInitStatment = ""
@@ -103,10 +124,16 @@ class Xls2CSharpParser(XlsParser):
         fieldName = field.name
         langFieldName = typ.context["fields"][field.index]["name"]
         if fieldType.isClass():
-            fieldInitStatment = 'this.{langFieldName} = new {className}(jsonNode["{fieldName}"]);'.format(
+            className = cls.formatClassName(fieldType.typename)
+            fieldInitStatment = (
+                '{{ var _n{fid} = jsonNode["{fieldName}"]; '
+                'this.{langFieldName} = (_n{fid} != null && !_n{fid}.IsNull) '
+                '? new {className}(_n{fid}) : new {className}(); }}'
+            ).format(
                 fieldName=fieldName,
                 langFieldName=langFieldName,
-                className=cls.formatClassName(fieldType.typename),
+                className=className,
+                fid=field.index,
             )
         elif fieldTypename == "bool":
             fieldInitStatment = 'this.{langFieldName} = jsonNode["{fieldName}"];'.format(fieldName=fieldName,langFieldName=langFieldName)
@@ -240,13 +267,13 @@ class Xls2CSharpParser(XlsParser):
         if typ.isEnum():
             typ = typ.underlyingType()
         if typ.isClass():
-            return "", "%s.ToJson()" % expr
+            return "", "%s != null ? %s.ToJson() : new JSONObject()" % (expr, expr)
         typename = typ.typename
         if typename == "bigint":
             return "", "%s.ToString()" % expr
         if typename == "list":
-            arr = "_ja%d_%d" % (fid, depth)
-            idx = "_ji%d_%d" % (fid, depth)
+            arr = "_a%d_%d" % (fid, depth)
+            idx = "_i%d_%d" % (fid, depth)
             inner_stmts, inner_expr = cls._json_value(typ.valueType, "%s[%s]" % (expr, idx), depth + 1, fid)
             stmts = (
                 "JSONArray %s = new JSONArray(); "
@@ -254,8 +281,8 @@ class Xls2CSharpParser(XlsParser):
             ) % (arr, expr, idx, idx, expr, idx, inner_stmts, arr, inner_expr)
             return stmts, arr
         if typename == "map":
-            obj = "_jo%d_%d" % (fid, depth)
-            kv = "_jk%d_%d" % (fid, depth)
+            obj = "_o%d_%d" % (fid, depth)
+            kv = "_k%d_%d" % (fid, depth)
             inner_stmts, inner_expr = cls._json_value(typ.valueType, "%s.Value" % kv, depth + 1, fid)
             key_type = typ.keyType.typename
             if key_type == "string" or key_type == "i18nstring":
@@ -287,7 +314,10 @@ class Xls2CSharpParser(XlsParser):
         if typ.isEnum():
             typ = typ.underlyingType()
         if typ.isClass():
-            return "%s.Serialize(bs);" % expr
+            className = cls.formatClassName(typ.typename)
+            return "if (%s != null) { %s.Serialize(bs); } else { new %s().Serialize(bs); }" % (
+                expr, expr, className)
+
         typename = typ.typename
         write = cls.writeFuncs.get(typename)
         if write:
@@ -295,9 +325,9 @@ class Xls2CSharpParser(XlsParser):
                 return "bs.%s(%s ?? \"\");" % (write, expr)
             return "bs.%s(%s);" % (write, expr)
         if typename == "list":
-            lvar = "_bl%d" % depth
-            nvar = "_bn%d" % depth
-            idx = "_bi%d" % depth
+            lvar = "_l%d" % depth
+            nvar = "_n%d" % depth
+            idx = "_i%d" % depth
             inner = cls._binary_value(typ.valueType, "%s[%s]" % (lvar, idx), depth + 1)
             return (
                 "{var %s = %s; int %s = %s == null ? 0 : %s.Count; "
@@ -305,9 +335,9 @@ class Xls2CSharpParser(XlsParser):
                 "bs.WriteUInt8((byte)%s); for (int %s = 0; %s < %s; %s++) { %s }}"
             ) % (lvar, expr, nvar, lvar, lvar, nvar, nvar, idx, idx, nvar, idx, inner)
         if typename == "map":
-            mvar = "_bm%d" % depth
-            nvar = "_bn%d" % depth
-            kv = "_bk%d" % depth
+            mvar = "_m%d" % depth
+            nvar = "_n%d" % depth
+            kv = "_k%d" % depth
             bkey = cls._binary_value(typ.keyType, "%s.Key" % kv, depth + 1)
             bval = cls._binary_value(typ.valueType, "%s.Value" % kv, depth + 1)
             return (
@@ -353,6 +383,7 @@ class Xls2CSharpParser(XlsParser):
     @classmethod
     def endParse(cls,outputPath):
         cls.writeAllClass(outputPath)
+        cls.writeAllEnum(outputPath)
         if cls.ignoreGenTables:
             return
         sheets = getSheets()

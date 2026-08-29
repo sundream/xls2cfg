@@ -194,6 +194,9 @@ class Type(object):
         self.enumFields = None                       # 枚举项列表
         self.enumByName = None                      # 枚举名 -> 值
         self.enumByValue = None                     # 合法整数值集合
+        self.externType = None                      # 外部类型全名（导代码时替换）
+        self.externConstructor = None               # 内部→外部，如 ExternTypeUtil.FromVec3
+        self.externReverseConstructor = None        # 外部→内部，如 ExternTypeUtil.ToVec3
         self.__fromString(fullTypename)
         self.singleton = False                      # true=单例类型
 

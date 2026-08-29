@@ -119,21 +119,25 @@ class Xls2CSharpParser(XlsParser):
     def formatFieldFromJson(cls,typ,fieldIndex):
         field = typ.fields[fieldIndex]
         fieldInitStatment = ""
-        fieldType = field.type.underlyingType() if field.type.isEnum() else field.type
+        rawType = field.type
+        fieldType = rawType.underlyingType() if rawType.isEnum() else rawType
         fieldTypename = fieldType.typename
         fieldName = field.name
         langFieldName = typ.context["fields"][field.index]["name"]
-        if fieldType.isClass():
+        if rawType.isEnum() and getattr(rawType, "externType", None):
+            under = cls.formatInternalType(rawType)
+            raw_expr = 'jsonNode["%s"]' % fieldName
+            internal_expr = "(%s)%s" % (under, raw_expr)
+            fieldInitStatment = "this.%s = %s;" % (langFieldName, cls._to_extern(rawType, internal_expr))
+        elif fieldType.isClass():
             className = cls.formatClassName(fieldType.typename)
-            fieldInitStatment = (
-                '{{ var _n{fid} = jsonNode["{fieldName}"]; '
-                'this.{langFieldName} = (_n{fid} != null && !_n{fid}.IsNull) '
-                '? new {className}(_n{fid}) : new {className}(); }}'
-            ).format(
-                fieldName=fieldName,
-                langFieldName=langFieldName,
-                className=className,
-                fid=field.index,
+            internal_expr = (
+                '(jsonNode["{fieldName}"] != null && !jsonNode["{fieldName}"].IsNull) '
+                '? new {className}(jsonNode["{fieldName}"]) : new {className}()'
+            ).format(fieldName=fieldName, className=className)
+            fieldInitStatment = "this.%s = %s;" % (
+                langFieldName,
+                cls._to_extern(fieldType, internal_expr),
             )
         elif fieldTypename == "bool":
             fieldInitStatment = 'this.{langFieldName} = jsonNode["{fieldName}"];'.format(fieldName=fieldName,langFieldName=langFieldName)
@@ -153,17 +157,18 @@ class Xls2CSharpParser(XlsParser):
             if fieldType.valueType is not None and fieldType.valueType.isClass():
                 className = cls.formatClassName(fieldType.valueType.typename)
                 valueType = cls.formatType(fieldType.valueType)
+                elem = cls._to_extern(fieldType.valueType, "new %s(_le%d)" % (className, field.index))
                 fieldInitStatment = (
                     '{{ this.{langFieldName} = new List<{valueType}>(); '
                     'var _ln{fid} = jsonNode["{fieldName}"]; '
                     'if (_ln{fid} != null && !_ln{fid}.IsNull && _ln{fid}.IsArray) {{ '
                     'foreach (JSONNode _le{fid} in _ln{fid}) {{ '
-                    'this.{langFieldName}.Add(new {className}(_le{fid})); }} }} }}'
+                    'this.{langFieldName}.Add({elem}); }} }} }}'
                 ).format(
                     fieldName=fieldName,
                     langFieldName=langFieldName,
                     valueType=valueType,
-                    className=className,
+                    elem=elem,
                     fid=field.index,
                 )
             else:
@@ -173,18 +178,19 @@ class Xls2CSharpParser(XlsParser):
                 className = cls.formatClassName(fieldType.valueType.typename)
                 keyType = cls.formatType(fieldType.keyType)
                 valueType = cls.formatType(fieldType.valueType)
+                elem = cls._to_extern(fieldType.valueType, "new %s(_ke%d.Value)" % (className, field.index))
                 fieldInitStatment = (
                     '{{ this.{langFieldName} = new Dictionary<{keyType},{valueType}>(); '
                     'var _kn{fid} = jsonNode["{fieldName}"]; '
                     'if (_kn{fid} != null && !_kn{fid}.IsNull && _kn{fid}.IsObject) {{ '
                     'foreach (var _ke{fid} in _kn{fid}.Linq) {{ '
-                    'this.{langFieldName}[_ke{fid}.Key] = new {className}(_ke{fid}.Value); }} }} }}'
+                    'this.{langFieldName}[_ke{fid}.Key] = {elem}; }} }} }}'
                 ).format(
                     fieldName=fieldName,
                     langFieldName=langFieldName,
                     keyType=keyType,
                     valueType=valueType,
-                    className=className,
+                    elem=elem,
                     fid=field.index,
                 )
             else:
@@ -197,14 +203,21 @@ class Xls2CSharpParser(XlsParser):
     def formatFieldFromBinary(cls,typ,fieldIndex):
         field = typ.fields[fieldIndex]
         fieldInitStatment = ""
-        fieldType = field.type.underlyingType() if field.type.isEnum() else field.type
+        rawType = field.type
+        fieldType = rawType.underlyingType() if rawType.isEnum() else rawType
         fieldTypename = fieldType.typename
         fieldName = field.name
         langFieldName = typ.context["fields"][field.index]["name"]
-        if fieldType.isClass():
-            fieldInitStatment = 'this.{langFieldName} = new {className}(bs);'.format(
-                langFieldName=langFieldName,
-                className=cls.formatClassName(fieldType.typename),
+        if rawType.isEnum() and getattr(rawType, "externType", None):
+            under_read = "bs.%s()" % cls.getReadFunc(rawType.underlyingType())
+            under = cls.formatInternalType(rawType)
+            internal_expr = "(%s)%s" % (under, under_read)
+            fieldInitStatment = "this.%s = %s;" % (langFieldName, cls._to_extern(rawType, internal_expr))
+        elif fieldType.isClass():
+            internal_expr = "new %s(bs)" % cls.formatClassName(fieldType.typename)
+            fieldInitStatment = "this.%s = %s;" % (
+                langFieldName,
+                cls._to_extern(fieldType, internal_expr),
             )
         elif fieldTypename == "bool":
             fieldInitStatment = 'this.{langFieldName} = bs.ReadBool();'.format(fieldName=fieldName,langFieldName=langFieldName)
@@ -263,8 +276,17 @@ class Xls2CSharpParser(XlsParser):
 
     @classmethod
     def _json_value(cls, typ, expr, depth, fid):
-        """Return (stmts, node_expr) that evaluate to a JSONNode."""
-        if typ.isEnum():
+        """Return (stmts, node_expr) that evaluate to a JSONNode. Wire uses internal type."""
+        if getattr(typ, "externType", None):
+            if typ.isClass():
+                tmp = "_r%d_%d" % (fid, depth)
+                stmts = "%s %s = %s; " % (
+                    cls.formatInternalType(typ), tmp, cls._from_extern(typ, expr))
+                return stmts, "%s != null ? %s.ToJson() : new JSONObject()" % (tmp, tmp)
+            expr = cls._from_extern(typ, expr)
+            if typ.isEnum():
+                typ = typ.underlyingType()
+        elif typ.isEnum():
             typ = typ.underlyingType()
         if typ.isClass():
             return "", "%s != null ? %s.ToJson() : new JSONObject()" % (expr, expr)
@@ -288,7 +310,11 @@ class Xls2CSharpParser(XlsParser):
             if key_type == "string" or key_type == "i18nstring":
                 key_expr = "%s.Key" % kv
             else:
-                key_expr = "%s.Key.ToString()" % kv
+                # map key may be extern enum: write underlying via _from_extern on key in key path
+                if getattr(typ.keyType, "externType", None):
+                    key_expr = "%s.ToString()" % cls._from_extern(typ.keyType, "%s.Key" % kv)
+                else:
+                    key_expr = "%s.Key.ToString()" % kv
             stmts = (
                 "JSONObject %s = new JSONObject(); "
                 "if (%s != null) { foreach (var %s in %s) { %s %s[%s] = %s; } }"
@@ -302,8 +328,7 @@ class Xls2CSharpParser(XlsParser):
         fieldName = field.name
         langFieldName = typ.context["fields"][field.index]["name"]
         expr = "this." + langFieldName
-        fieldType = field.type.underlyingType() if field.type.isEnum() else field.type
-        stmts, node_expr = cls._json_value(fieldType, expr, 0, fieldIndex)
+        stmts, node_expr = cls._json_value(field.type, expr, 0, fieldIndex)
         assign = 'jsonNode["%s"] = %s;' % (fieldName, node_expr)
         if stmts:
             return stmts + " " + assign
@@ -311,7 +336,17 @@ class Xls2CSharpParser(XlsParser):
 
     @classmethod
     def _binary_value(cls, typ, expr, depth):
-        if typ.isEnum():
+        if getattr(typ, "externType", None):
+            if typ.isClass():
+                className = cls.formatClassName(typ.typename)
+                tmp = "_r%d" % depth
+                return "{%s %s = %s; if (%s != null) { %s.Serialize(bs); } else { new %s().Serialize(bs); }}" % (
+                    cls.formatInternalType(typ), tmp, cls._from_extern(typ, expr),
+                    tmp, tmp, className)
+            expr = cls._from_extern(typ, expr)
+            if typ.isEnum():
+                typ = typ.underlyingType()
+        elif typ.isEnum():
             typ = typ.underlyingType()
         if typ.isClass():
             className = cls.formatClassName(typ.typename)
@@ -351,15 +386,20 @@ class Xls2CSharpParser(XlsParser):
     def formatFieldToBinary(cls,typ,fieldIndex):
         field = typ.fields[fieldIndex]
         langFieldName = typ.context["fields"][field.index]["name"]
-        fieldType = field.type.underlyingType() if field.type.isEnum() else field.type
-        return cls._binary_value(fieldType, "this." + langFieldName, 0)
+        return cls._binary_value(field.type, "this." + langFieldName, 0)
 
     @classmethod
     def _read_expr(cls, typ):
+        """Read wire as internal type, then convert to extern if mapped (inline, no named temp)."""
         if typ.isEnum():
-            typ = typ.underlyingType()
+            under_read = "bs.%s()" % cls.getReadFunc(typ.underlyingType())
+            if getattr(typ, "externType", None):
+                under = cls.formatInternalType(typ)
+                return cls._to_extern(typ, "(%s)%s" % (under, under_read))
+            return under_read
         if typ.isClass():
-            return "new %s(bs)" % cls.formatClassName(typ.typename)
+            internal_expr = "new %s(bs)" % cls.formatClassName(typ.typename)
+            return cls._to_extern(typ, internal_expr)
         return "bs.%s()" % cls.getReadFunc(typ)
 
     @classmethod
@@ -376,7 +416,6 @@ class Xls2CSharpParser(XlsParser):
             valueType = cls.formatType(typ.valueType)
             readFunc = readFunc.format(keyType=keyType,valueType=valueType)
         elif readFunc is None:
-            # class
             readFunc = "ReadValue<{typename}>".format(typename = cls.formatClassName(typename))
         return readFunc
 
@@ -412,6 +451,8 @@ class Xls2CSharpParser(XlsParser):
 
     @classmethod
     def formatType(cls,typ):
+        if getattr(typ, "externType", None):
+            return typ.externType
         typename = typ.typename
         if typ.isEnum():
             return cls.formatType(typ.underlyingType())
@@ -425,6 +466,46 @@ class Xls2CSharpParser(XlsParser):
         elif typename == "map":
             langTypename = "%s<%s,%s>" % (langTypename,cls.formatType(typ.keyType),cls.formatType(typ.valueType))
         return langTypename
+
+    @classmethod
+    def formatInternalType(cls, typ):
+        """C# type name for the internal cfg type (ignore extern mapping)."""
+        if typ.isEnum():
+            return cls.formatInternalType(typ.underlyingType())
+        if typ.isClass():
+            return cls.formatClassName(typ.typename)
+        typename = typ.typename
+        if typename == "list":
+            return "%s<%s>" % (cls.typeMaps["list"], cls.formatInternalType(typ.valueType))
+        if typename == "map":
+            return "%s<%s,%s>" % (
+                cls.typeMaps["map"],
+                cls.formatInternalType(typ.keyType),
+                cls.formatInternalType(typ.valueType),
+            )
+        if cls.typeMaps.get(typename) is None:
+            raise Exception("unknow typename: %s" % typename)
+        return cls.typeMaps[typename]
+
+    @classmethod
+    def _to_extern(cls, typ, internal_expr):
+        """internal → external (inline)."""
+        ctor = getattr(typ, "externConstructor", None)
+        if ctor:
+            return "%s(%s)" % (ctor, internal_expr)
+        if typ.isEnum() and getattr(typ, "externType", None):
+            return "(%s)%s" % (typ.externType, internal_expr)
+        return internal_expr
+
+    @classmethod
+    def _from_extern(cls, typ, field_expr):
+        """external → internal (inline), for ToJson/Serialize wire format."""
+        rev = getattr(typ, "externReverseConstructor", None)
+        if rev:
+            return "%s(%s)" % (rev, field_expr)
+        if typ.isEnum() and getattr(typ, "externType", None):
+            return "(%s)%s" % (cls.formatInternalType(typ), field_expr)
+        return field_expr
 
     @classmethod
     def formatFieldName(cls,fieldName):

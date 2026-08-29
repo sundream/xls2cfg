@@ -30,6 +30,7 @@ from XlsParser.Sheet import Sheet, getSheets, is_importable_sheet_title
 from XlsParser.I18NExport import readI18nFile,writeI18nFile
 from XlsParser.XlsClass import readClass
 from XlsParser.XlsEnum import readEnum
+from XlsParser.XlsExternType import apply_extern_types
 from XlsParser.Config import Config
 from openpyxl import load_workbook
 
@@ -155,6 +156,8 @@ def overlay_config(jsonConfig, options):
         cfg["class"] = options.classDef
     if options.enumDef is not None:
         cfg["enum"] = options.enumDef
+    if options.externType is not None:
+        cfg["externType"] = options.externType
     defaults = parse_json_arg(options.defaultsJson, "--defaults")
     if defaults is not None:
         cfg["defaults"] = defaults
@@ -240,6 +243,7 @@ e.g:
     parser.add_option("--merge", dest="mergeJson", help='json object, e.g. {"toSheetName":["fromSheetName"]}')
     parser.add_option("--class", dest="classDef", help="__class__ path: dir / __class__.xlsx / __class__.json / stem; default {input}/__class__")
     parser.add_option("--enum", dest="enumDef", help="__enum__ path: dir / __enum__.xlsx / __enum__.json / stem; default {input}/__enum__")
+    parser.add_option("--extern-type", dest="externType", help="extern type map json path (absolute/relative; dir / file / stem); omit = no conversion")
     options,args = parser.parse_args()
 
     export_tags = None
@@ -395,6 +399,8 @@ e.g:
     # Accept xlsx+json (json overrides). Paths: config class/enum or --class/--enum, else inputDir.
     class_path = jsonConfig.get("class") or inputDir
     enum_path = jsonConfig.get("enum") or inputDir
+    # Explicit only; omit = no extern conversion
+    extern_path = jsonConfig.get("externType") or None
     readEnum(path=enum_path)
     readClass(path=class_path)
     # 载入所有表
@@ -408,8 +414,8 @@ e.g:
             if fileName.startswith("~$"):
                 # 临时文件
                 continue
-            if fileName.startswith("__class__") or fileName.startswith("__enum__"):
-                # 类/枚举定义文件（类型已载入，不作为配表导出行）
+            if fileName.startswith("__class__") or fileName.startswith("__enum__") or fileName.startswith("__externtype__"):
+                # 类/枚举/外部类型定义文件（类型已载入，不作为配表导出行）
                 continue
             fullFileName = root + "/" + fileName
             if onlyExportChange and fullFileName not in exportFileList:
@@ -461,6 +467,7 @@ e.g:
         Parser = parser_for_format(outputFormat)
         if Parser is None:
             raise Exception("unknown outputFormat: %s" % outputFormat)
+        apply_extern_types(extern_path, outputFormat)
 
         # 生成配置文件
         output = os.path.join(outputDir,outputFormat)

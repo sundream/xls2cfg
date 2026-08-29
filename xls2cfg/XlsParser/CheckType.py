@@ -297,9 +297,11 @@ def toValue(value,typ,options=None):
         value,ok = toString(value)
         if not ok:
             return False,"expect '%s',but got python type '%s',value=%s" % (typename,pythonType,value)
-        if typename == "i18nstring":
+        if typename == "i18nstring" and value != "":
             escaped = escapeString(value)
-            setI18NText(escaped,xlsFilename,"%s%s" % (get_column_letter(col+1),row+1))
+            headerRow = options.get("headerRow",0) if options else 0
+            excelRow = headerRow + row + 1
+            setI18NText(escaped,xlsFilename,"%s%s" % (get_column_letter(col+1),excelRow))
             if localize:
                 # localizeTexts 的 key 与 po 中 msgid 一致，均为转义后的文本
                 localized = getLocalizeText(escaped)

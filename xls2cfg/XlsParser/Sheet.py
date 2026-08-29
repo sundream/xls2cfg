@@ -356,6 +356,7 @@ class Sheet(object):
                     "xlsFilename":self.filename,
                     "row":i,
                     "col":j,
+                    "headerRow":self.headerRow,
                     "localize":localize,
                     "depth":0,
                 })
@@ -567,34 +568,116 @@ class Sheet(object):
             return getattr(Convert,convert)
 
     def getConstraint(self,col,key):
-        constraint = self.col2constraint[col]
+        constraint = self.col2constraint.get(col)
+        if not constraint:
+            return None
         return constraint.get(key)
+
+    @staticmethod
+    def _ref_supported_leaf(typ):
+        """True if typ can be a ref leaf (scalar / enum)."""
+        if typ is None:
+            return False
+        if typ.typename in ("list", "map", "json"):
+            return False
+        if typ.isClass():
+            return False
+        return True
+
+    def _ref_type_error(self, typ):
+        """Return error message if typ cannot carry a column-level ref, else None."""
+        if typ is None:
+            return "ref column has no type"
+        if typ.typename == "list":
+            elem = typ.valueType
+            if not self._ref_supported_leaf(elem):
+                return "ref only supports list<scalar|enum>, got list<%s>" % (
+                    elem.fullTypename if elem else "?")
+            return None
+        if typ.typename == "map":
+            val_t = typ.valueType
+            if not self._ref_supported_leaf(val_t):
+                return "ref only supports map<*,scalar|enum>, got map<%s,%s>" % (
+                    typ.keyType.fullTypename if typ.keyType else "?",
+                    val_t.fullTypename if val_t else "?")
+            return None
+        if not self._ref_supported_leaf(typ):
+            return "ref not supported on type '%s' (only scalar/enum, list<scalar|enum>, map<*,scalar|enum>)" % typ.fullTypename
+        return None
+
+    def _ref_values(self, value, typ):
+        """Collect leaf values that must exist in the referenced column."""
+        err = self._ref_type_error(typ)
+        if err:
+            return None, err
+        if typ.typename == "list":
+            return list(value or []), None
+        if typ.typename == "map":
+            return list((value or {}).values()), None
+        return [value], None
+
+    @staticmethod
+    def _parse_ref(ref):
+        """Parse ref target: 'table.field' or 'table' (field defaults to id).
+
+        Returns (refFilename, refColname) or (None, errorMessage).
+        """
+        if not ref or not str(ref).strip():
+            return None, "reference constraint empty; expect 'ref=table' or 'ref=table.field'"
+        ref = str(ref).strip()
+        if "." in ref:
+            parts = ref.split(".")
+            if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+                return None, "reference constraint expire format 'ref=table' or 'ref=table.field',but got value='%s'" % ref
+            return parts[0].strip(), parts[1].strip()
+        return ref, "id"
 
     def checkRef(self):
         if self.singleton:
             return
-        for i,row in enumerate(self.rows):
-            for j,value in enumerate(row):
-                if value:
-                    ref = self.getConstraint(j,"ref")
-                    if ref:
-                        refList = ref.split(".")
-                        if len(refList) != 2:
-                            raise Exception(self.message(i,j,"reference constraint expire format 'ref=refFilename.refColname',but got value='%s'" % ref))
-                        refFilename,refColname = refList
-                        refSheet = self.getSheet(refFilename)
-                        if refSheet is None:
-                            raise Exception(self.message(i,j,"reference's excel not exist,refFilename=%s,refColname=%s" % (refFilename,refColname)))
-                        refSheetCol = refSheet.key2col.get(refColname)
-                        if refSheetCol is None:
-                            raise Exception(self.message(i,j,"reference's column not exist,refFilename=%s,refColname=%s" % (refFilename,refColname)))
-                        ok = False
-                        for refRow in refSheet.rows:
-                            if value == refRow[refSheetCol]:
-                                ok = True
-                                break
-                        if not ok:
-                            raise Exception(self.message(i,j,"reference's value not exist,refFilename=%s,refColname=%s" % (refFilename,refColname)))
+        # Validate columns that declare ref (even if all cells empty).
+        for j, constraint in self.col2constraint.items():
+            if not constraint or not constraint.get("ref"):
+                continue
+            ref = constraint["ref"]
+            typ = self.col2type.get(j)
+            err = self._ref_type_error(typ)
+            if err:
+                raise Exception(self.message(0, j, err))
+            refFilename, refColname = self._parse_ref(ref)
+            if refFilename is None:
+                raise Exception(self.message(0, j, refColname))
+            refSheet = self.getSheet(refFilename)
+            if refSheet is None:
+                raise Exception(self.message(0, j, "reference's excel not exist,refFilename=%s,refColname=%s" % (refFilename, refColname)))
+            if refSheet.key2col.get(refColname) is None:
+                raise Exception(self.message(0, j, "reference's column not exist,refFilename=%s,refColname=%s" % (refFilename, refColname)))
+
+        for i, row in enumerate(self.rows):
+            for j, value in enumerate(row):
+                if not value:
+                    continue
+                ref = self.getConstraint(j, "ref")
+                if not ref:
+                    continue
+                refFilename, refColname = self._parse_ref(ref)
+                if refFilename is None:
+                    raise Exception(self.message(i, j, refColname))
+                refSheet = self.getSheet(refFilename)
+                refSheetCol = refSheet.key2col.get(refColname)
+                values, err = self._ref_values(value, self.col2type[j])
+                if err:
+                    raise Exception(self.message(i, j, err))
+                for item in values:
+                    if item is None or item == "":
+                        continue
+                    ok = False
+                    for refRow in refSheet.rows:
+                        if item == refRow[refSheetCol]:
+                            ok = True
+                            break
+                    if not ok:
+                        raise Exception(self.message(i, j, "reference's value not exist,value=%s,refFilename=%s,refColname=%s" % (item, refFilename, refColname)))
 
     def mergeFrom(self,fromSheet):
         for row in fromSheet.rows:

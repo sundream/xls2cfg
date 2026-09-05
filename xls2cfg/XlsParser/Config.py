@@ -10,6 +10,7 @@ class Config(object):
     classNameFirstUpper = False     # true=导出的类名首字母大写
     fieldNameFirstUpper = False     # true=导出的字段名首字母大写
     fieldReadonly = True            # true=C# 字段加 readonly（仅 csharp）
+    exportTablesFromSchema = False  # true=--export-code-from-schema 时生成 Tables.cs
     namespace = "Cfg"               # 命名空间
     constraintSeperator = ';'       # 约束分隔符
     indent = "    ";                # 缩进符

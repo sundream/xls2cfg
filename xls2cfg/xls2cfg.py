@@ -76,6 +76,8 @@ def apply_json_config(jsonConfig):
         Config.maxCol = jsonConfig.get("maxCol")
     if "namespace" in jsonConfig:
         Config.namespace = jsonConfig.get("namespace")
+    if "exportTablesFromSchema" in jsonConfig:
+        Config.exportTablesFromSchema = jsonConfig.get("exportTablesFromSchema")
 
 def parse_csv_list(value):
     if value is None:
@@ -150,6 +152,8 @@ def overlay_config(jsonConfig, options):
         cfg["fieldNameFirstUpper"] = choice_to_bool(options.fieldNameFirstUpper)
     if options.fieldReadonly is not None:
         cfg["fieldReadonly"] = choice_to_bool(options.fieldReadonly)
+    if options.exportTablesFromSchema is not None:
+        cfg["exportTablesFromSchema"] = choice_to_bool(options.exportTablesFromSchema)
     if options.i18nExportOneFile is not None:
         cfg["i18nExportOneFile"] = choice_to_bool(options.i18nExportOneFile)
     if options.classDef is not None:
@@ -196,8 +200,9 @@ e.g:
     python %prog --from-schema=schema.json --from-binary=data.bytes --out-xlsx-dir=../Excel
     python %prog --from-schema-dir=schema --from-json-dir=json --out-xlsx-dir=../Excel
     python %prog --from-xlsx=a.xlsx --output=../Output/Client --output-formats=schema,json,binary,csharp
-    python %prog --export-code-by-schema=../Output/Client/schema --config=config-client.json
-    python %prog --export-code-by-schema=../Output/Client/schema/hero.json --output=../Output/Client --output-formats=csharp"""
+    python %prog --export-code-from-schema=../Output/Client/schema --config=config-client.json
+    python %prog --export-code-from-schema=../Output/Client/schema/hero.json --output=../Output/Client --output-formats=csharp
+    python %prog --export-code-from-schema=../Output/Client/schema --output=../Output/Client --output-formats=csharp --export-tables-from-schema=true"""
     parser = optparse.OptionParser(usage=usage,version="%prog 0.0.1")
     parser.add_option("-c","--config",help="[optional] json config file; CLI args override file values")
     parser.add_option("-x","--onlyExportChange",action="store_true",default=False,help="[optional] only export change files")
@@ -212,7 +217,8 @@ e.g:
     parser.add_option("--out-xlsx-dir", dest="outXlsxDir", help="output xlsx directory; filename from schema.workbook")
     # xlsx -> data/code
     parser.add_option("--from-xlsx", dest="fromXlsx", help="single xlsx -> {output}/{format}/")
-    parser.add_option("--export-code-by-schema", dest="exportCodeBySchema", help="export code types from schema dir or a single schema json; dependent types are not auto-exported")
+    parser.add_option("--export-code-from-schema", dest="exportCodeFromSchema", help="export code types from schema dir or a single schema json; dependent types are not auto-exported")
+    parser.add_option("--export-tables-from-schema", dest="exportTablesFromSchema", help="true/false or 1/0, generate Tables.cs during --export-code-from-schema (csharp only), default %s" % cfg_bool_choice(Config.exportTablesFromSchema), **BOOL_OPTION)
     parser.add_option("--tags", dest="exportTags", help="tag filter, comma-separated (e.g. c,s); default empty = all columns")
     # optparse has no required=; input/output/outputFormats are checked after overlay.
     # overlay uses is not None, so do not set default= on these dests (would always override --config).
@@ -312,7 +318,7 @@ e.g:
         )
         return
 
-    if options.exportCodeBySchema:
+    if options.exportCodeFromSchema:
         jsonConfig = {}
         if options.config is not None:
             configFileName = options.config
@@ -335,7 +341,7 @@ e.g:
             parser.error("'outputFormats' required (--output-formats or config.outputFormats)")
         apply_json_config(jsonConfig)
         export_code_from_schema(
-            options.exportCodeBySchema,
+            options.exportCodeFromSchema,
             outputDir,
             outputFormats,
             parser_for_format,
@@ -461,6 +467,16 @@ e.g:
                         sheets.pop(fromFileName)
                         toSheet.mergeFrom(fromSheet)
 
+    # 等级表：校验 base.id 的 levelTable=xxx；WithLevel 仅 runtime 合并，不落 data json
+    from XlsParser.LevelTableMerge import (
+        validate_level_table_bindings,
+        write_runtime_with_level_schemas,
+        register_with_level_types,
+    )
+    validate_level_table_bindings(sheets)
+    if "csharp" in outputFormats:
+        register_with_level_types(sheets)
+
     XlsParser.ignoreGenTables = onlyExportChange
     for outputFormat in outputFormats:
         print("xls2cfg,outputDir=%s,outputFormat=%s" % (outputDir,outputFormat))
@@ -477,6 +493,7 @@ e.g:
         if outputFormat == "schema":
             write_class_schemas_from_excel(inputDir, output, class_path=class_path)
             write_enum_schemas_from_excel(inputDir, output, enum_path=enum_path)
+            write_runtime_with_level_schemas(sheets, output, pretty=Config.pretty)
         Parser.endParse(output)
 
     # 生成国际化待翻译文本(如果目标文件已存在,则合并翻译文本)

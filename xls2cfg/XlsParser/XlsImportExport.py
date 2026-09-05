@@ -1585,6 +1585,7 @@ def export_code_from_schema(schema_path, output_dir, output_formats, parser_for_
 
     Dependent types are registered as stubs when needed, but are not written.
     Language is decided by ``output_formats`` (csharp/go have class/enum codegen).
+    C# ``Tables.cs`` is written only when ``Config.exportTablesFromSchema`` is true.
     """
     from XlsParser.XlsParser import XlsParser
 
@@ -1594,6 +1595,9 @@ def export_code_from_schema(schema_path, output_dir, output_formats, parser_for_
 
     enum_objs = [o for o in objs if is_enum_schema(o)]
     class_objs = [o for o in objs if not is_enum_schema(o)]
+    from XlsParser.LevelTableMerge import append_with_level_schemas, is_with_level_schema
+    from XlsParser.Xls2CSharpParser import Xls2CSharpParser
+    class_objs = append_with_level_schemas(class_objs)
     export_names = []
 
     for o in enum_objs:
@@ -1653,6 +1657,9 @@ def export_code_from_schema(schema_path, output_dir, output_formats, parser_for_
         Type.unregister(name)
         typ = Type.createClass(name, _schema_fields_to_type_fields(o.get("fields")))
         typ.comment = o.get("displayName") or o.get("comment") or None
+        if is_with_level_schema(o):
+            typ.baseTable = o.get("baseTable") or ""
+            typ.levelTable = o.get("levelTable") or ""
         if o.get("kind") == KIND_1D:
             typ.singleton = True
         if not getattr(typ, "singleton", False) and typ.fields:
@@ -1695,6 +1702,24 @@ def export_code_from_schema(schema_path, output_dir, output_formats, parser_for_
                 written.append("%s/%s" % (fmt, name))
             else:
                 print("skip type %s for format %s" % (name, fmt))
+        if (
+            fmt == "csharp"
+            and Config.exportTablesFromSchema
+            and hasattr(Parser, "writeTablesFromSchema")
+        ):
+            from XlsParser.LevelTableMerge import is_with_level_schema
+            table_schemas = [
+                o for o in class_objs
+                if o.get("kind") in (KIND_1D, KIND_2D)
+                and o.get("name")
+                and not is_with_level_schema(o)
+            ]
+            with_level_schemas = [
+                o for o in class_objs if is_with_level_schema(o)
+            ]
+            if table_schemas or with_level_schemas:
+                Parser.writeTablesFromSchema(table_schemas, out, with_level_schemas)
+                written.append("%s/Tables" % fmt)
     print(json.dumps({
         "ok": True,
         "schema": str(schema_path),

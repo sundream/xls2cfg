@@ -48,6 +48,18 @@ namespace {{namespace}} {
         {% endif -%}
         {% endfor %}
 
+        {% for sheet in withLevelSheets -%}
+        private Dictionary<{{sheet.idTypename}}, {{sheet.className}}> _{{sheet.instName}};
+        public Dictionary<{{sheet.idTypename}}, {{sheet.className}}> {{sheet.instName}} {
+            get {
+                if (this._{{sheet.instName}} == null) {
+                    this._{{sheet.instName}} = {{namespace}}.{{sheet.className}}.MergeTable(this.{{sheet.baseInstName}}, this.{{sheet.levelInstName}});
+                }
+                return this._{{sheet.instName}};
+            }
+        }
+        {% endfor %}
+
         private static T Deserialize<T>(byte[] data) {
             Type type = typeof(T);
             object obj = null;
@@ -135,6 +147,18 @@ namespace {{namespace}} {
                 var prop = properties[i];
                 obj = prop.GetValue(this, null);
             }
+        }
+
+        public void ClearWithLevelTables() {
+            {% for sheet in withLevelSheets -%}
+            this._{{sheet.instName}} = null;
+            {% endfor %}
+        }
+
+        public void ClearAllTables() {
+            {% for sheet in sheets -%}
+            this._{{sheet.instName}} = null;
+            {% endfor %}
         }
     }
 }

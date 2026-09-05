@@ -228,9 +228,11 @@ class Sheet(object):
                                 v = lst[1]
                             if not k:
                                 continue
-                            if k == "convert" or k == "ref":
+                            if k == "convert" or k == "ref" or k == "levelTable":
                                 if v is None:
                                     raise Exception(self._message(i,j,"expire format '%s=value'" % k))
+                                if k == "levelTable" and j != self.idCol:
+                                    raise Exception(self._message(i,j,"levelTable is only allowed on id column"))
                                 self.col2constraint[j][k] = v
                             elif k == "min" or k == "max":
                                 if v is None:

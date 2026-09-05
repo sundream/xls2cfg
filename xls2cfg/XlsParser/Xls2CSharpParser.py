@@ -6,6 +6,12 @@ from XlsParser.XlsParser import XlsParser
 from XlsParser.Sheet import getSheets
 from XlsParser.Config import Config
 from XlsParser.Type import Type
+from XlsParser.Xls2SchemaParser import KIND_1D
+from XlsParser.LevelTableMerge import (
+    DEFAULT_LEVEL_ID_FACTOR,
+    is_with_level_schema,
+    with_level_table_name,
+)
 from jinja2 import Template
 import os.path
 
@@ -83,17 +89,63 @@ class Xls2CSharpParser(XlsParser):
     @classmethod
     def writeClass(cls,typ,outputPath):
         cls.buildTypeContext(typ)
-        classTemplateFilename = "../runtimes/csharp/class.txt"
-        if not typ.getIdField():
-            classTemplateFilename = "../runtimes/csharp/singleton_class.txt"
+        if getattr(typ, "baseTable", None):
+            classTemplateFilename = "../runtimes/csharp/with_level_class.txt"
+            cls.buildWithLevelContext(typ)
+        else:
+            classTemplateFilename = "../runtimes/csharp/class.txt"
+            if not typ.getIdField():
+                classTemplateFilename = "../runtimes/csharp/singleton_class.txt"
         template = Template(open(classTemplateFilename,encoding="utf-8").read())
-        typ.context["formatFieldFromJson"] = lambda fieldIndex: cls.formatFieldFromJson(typ,fieldIndex)
-        typ.context["formatFieldFromBinary"] = lambda fieldIndex: cls.formatFieldFromBinary(typ,fieldIndex)
-        typ.context["formatFieldToString"] = lambda fieldIndex: cls.formatFieldToString(typ,fieldIndex)
-        typ.context["formatFieldToJson"] = lambda fieldIndex: cls.formatFieldToJson(typ,fieldIndex)
-        typ.context["formatFieldToBinary"] = lambda fieldIndex: cls.formatFieldToBinary(typ,fieldIndex)
+        if not getattr(typ, "baseTable", None):
+            typ.context["formatFieldFromJson"] = lambda fieldIndex: cls.formatFieldFromJson(typ,fieldIndex)
+            typ.context["formatFieldFromBinary"] = lambda fieldIndex: cls.formatFieldFromBinary(typ,fieldIndex)
+            typ.context["formatFieldToString"] = lambda fieldIndex: cls.formatFieldToString(typ,fieldIndex)
+            typ.context["formatFieldToJson"] = lambda fieldIndex: cls.formatFieldToJson(typ,fieldIndex)
+            typ.context["formatFieldToBinary"] = lambda fieldIndex: cls.formatFieldToBinary(typ,fieldIndex)
         data = template.render(typ.context)
         cls.writeTo(os.path.join(outputPath,typ.context["className"]),data)
+
+    @classmethod
+    def buildWithLevelContext(cls, typ):
+        base_table = typ.baseTable
+        level_table = typ.levelTable
+        base_typ = Type.get(cls.formatClassName(base_table))
+        level_typ = Type.get(cls.formatClassName(level_table))
+        typ.context["baseClassName"] = cls.formatClassName(base_table)
+        typ.context["levelClassName"] = cls.formatClassName(level_table)
+        typ.context["baseInstName"] = cls.formatFieldName(base_table)
+        typ.context["levelInstName"] = cls.formatFieldName(level_table)
+
+        base_id = base_typ.getIdField() if base_typ else None
+        level_id = level_typ.getIdField() if level_typ else None
+        typ.context["baseIdName"] = cls.formatFieldName(base_id.name if base_id else "id")
+        typ.context["baseIdTypename"] = cls.formatType(base_id.type) if base_id else "int"
+        typ.context["levelIdTypename"] = cls.formatType(level_id.type) if level_id else "long"
+        typ.context["levelTableIdName"] = cls.formatFieldName(level_id.name if level_id else "Id")
+        typ.context["levelFieldName"] = cls.formatFieldName("level")
+        typ.context["levelIdFactor"] = DEFAULT_LEVEL_ID_FACTOR
+
+        max_level_field = None
+        if base_typ and base_typ.isClass():
+            for field in base_typ.fields:
+                if field.name == "maxLevel":
+                    max_level_field = cls.formatFieldName("maxLevel")
+                    break
+        if max_level_field is None:
+            max_level_field = cls.formatFieldName("maxLevel")
+        typ.context["maxLevelFieldName"] = max_level_field
+
+        level_override_fields = []
+        if level_typ and level_typ.isClass():
+            for field in level_typ.fields:
+                if field.name in ("id", "level"):
+                    continue
+                level_override_fields.append({
+                    "_name": field.name,
+                    "name": cls.formatFieldName(field.name),
+                })
+        typ.context["levelOverrideFields"] = level_override_fields
 
     @classmethod
     def writeEnum(cls,typ,outputPath):
@@ -320,6 +372,8 @@ class Xls2CSharpParser(XlsParser):
                 "if (%s != null) { foreach (var %s in %s) { %s %s[%s] = %s; } }"
             ) % (obj, expr, kv, expr, inner_stmts, obj, key_expr, inner_expr)
             return stmts, obj
+        if typename in ("string", "i18nstring"):
+            return "", "%s ?? \"\"" % expr
         return "", expr
 
     @classmethod
@@ -429,6 +483,7 @@ class Xls2CSharpParser(XlsParser):
         context = {
             "namespace" : Config.namespace,
             "sheets" : [],
+            "withLevelSheets" : [],
         }
         for sheetName,sheet in sheets.items():
             idName = cls.formatFieldName(sheet.col2key[sheet.idCol])
@@ -444,10 +499,88 @@ class Xls2CSharpParser(XlsParser):
                 "idName" : idName,
                 "idTypename" : idTypename,
             })
-        tableTemplateFilename = "../runtimes/csharp/tables.txt"
-        template = Template(open(tableTemplateFilename,encoding="utf-8").read())
+            level_table_name = sheet.getConstraint(sheet.idCol, "levelTable")
+            if level_table_name and not sheet.singleton and sheet.splitCol == -1:
+                wl_stem = with_level_table_name(sheetName)
+                level_sheet = sheets.get(level_table_name)
+                level_id_typename = "long"
+                if level_sheet is not None:
+                    level_id_typename = cls.formatType(level_sheet.col2type[level_sheet.idCol])
+                context["withLevelSheets"].append({
+                    "instName": cls.formatFieldName(wl_stem),
+                    "className": cls.formatClassName(wl_stem),
+                    "idTypename": level_id_typename,
+                    "baseInstName": instName,
+                    "levelInstName": cls.formatFieldName(level_table_name),
+                })
+        cls._renderTablesTemplate(context, outputPath)
+
+    @classmethod
+    def writeTablesFromSchema(cls, table_schemas, output_path, with_level_schemas=None):
+        """Generate Tables.cs from schema json (kind 1/2 tables), for --export-code-from-schema."""
+        context = {
+            "namespace": Config.namespace,
+            "sheets": [],
+            "withLevelSheets": [],
+        }
+        for schema in sorted(table_schemas, key=lambda o: o.get("name") or ""):
+            name = schema.get("name")
+            if not name or is_with_level_schema(schema):
+                continue
+            singleton = schema.get("kind", KIND_1D) == KIND_1D
+            typename = schema.get("typename") or name
+            entry = {
+                "classComment": schema.get("displayName") or schema.get("comment") or "",
+                "instName": cls.formatFieldName(name),
+                "className": cls.formatClassName(typename),
+                "fileName": name,
+                "singleton": singleton,
+                "idName": "Id",
+                "idTypename": "int",
+            }
+            if not singleton:
+                id_field = None
+                for f in schema.get("fields") or []:
+                    if f.get("name") == "id":
+                        id_field = f
+                        break
+                if id_field is None and schema.get("fields"):
+                    id_field = schema["fields"][0]
+                if id_field is not None:
+                    id_typ = Type.get(id_field.get("type"))
+                    if id_typ is not None:
+                        entry["idTypename"] = cls.formatType(id_typ)
+                    entry["idName"] = cls.formatFieldName(id_field.get("name") or "id")
+            context["sheets"].append(entry)
+        for schema in sorted(with_level_schemas or [], key=lambda o: o.get("name") or ""):
+            name = schema.get("name")
+            if not name:
+                continue
+            typename = schema.get("typename") or name
+            id_typename = "long"
+            for f in schema.get("fields") or []:
+                if f.get("name") == "id":
+                    id_typ = Type.get(f.get("type"))
+                    if id_typ is not None:
+                        id_typename = cls.formatType(id_typ)
+                    break
+            base_name = schema.get("baseTable") or ""
+            level_name = schema.get("levelTable") or ""
+            context["withLevelSheets"].append({
+                "instName": cls.formatFieldName(name),
+                "className": cls.formatClassName(typename),
+                "idTypename": id_typename,
+                "baseInstName": cls.formatFieldName(base_name),
+                "levelInstName": cls.formatFieldName(level_name),
+            })
+        cls._renderTablesTemplate(context, output_path)
+
+    @classmethod
+    def _renderTablesTemplate(cls, context, output_path):
+        table_template_filename = "../runtimes/csharp/tables.txt"
+        template = Template(open(table_template_filename, encoding="utf-8").read())
         data = template.render(context)
-        cls.writeTo(os.path.join(outputPath,"Tables"),data)
+        cls.writeTo(os.path.join(output_path, "Tables"), data)
 
     @classmethod
     def formatType(cls,typ):

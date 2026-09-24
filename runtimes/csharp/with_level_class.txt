@@ -17,7 +17,7 @@ namespace {{namespace}} {
                 throw new ArgumentNullException(nameof(levelRow));
             }
             {% for field in fields -%}
-            {% if field._name != 'id' -%}
+            {% if field._name != 'id' and field._name != 'level' -%}
             this.{{field.name}} = baseRow.{{field.name}};
             {% endif -%}
             {% endfor %}
@@ -33,7 +33,7 @@ namespace {{namespace}} {
                 throw new ArgumentNullException(nameof(baseRow));
             }
             {% for field in fields -%}
-            {% if field._name != 'id' -%}
+            {% if field._name != 'id' and field._name != 'level' -%}
             this.{{field.name}} = baseRow.{{field.name}};
             {% endif -%}
             {% endfor %}

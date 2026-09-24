@@ -324,8 +324,13 @@ def _class_field_names(class_name: str):
     return None
 
 
-def encode_value_for_excel(typ: str, val):
-    """Encode json/runtime value into Excel cell text/number for re-import."""
+def _field_type_str(field) -> str:
+    ft = field.type
+    return ft.fullTypename or ft.typename
+
+
+def encode_json_cell_tree(typ: str, val):
+    """Build a JSON-serializable tree for one Excel cell (forward import uses json.loads)."""
     if val is None:
         return None
     if isinstance(val, bool):
@@ -339,28 +344,54 @@ def encode_value_for_excel(typ: str, val):
     if t.startswith("list<") and t.endswith(">"):
         inner = t[5:-1].strip()
         if not isinstance(val, list):
-            return str(val)
-        class_fields = _class_field_names(inner)
-        if class_fields:
-            encoded = []
+            return val
+        elem_typ = Type.get(inner)
+        if elem_typ is not None and elem_typ.isClass() and elem_typ.fields:
+            rows = []
             for elem in val:
-                if isinstance(elem, dict):
-                    encoded.append([elem.get(k) for k in class_fields])
-                else:
-                    encoded.append(elem)
-            return json.dumps(encoded, ensure_ascii=False)
-        # nested list / primitives
-        return json.dumps(val, ensure_ascii=False)
+                if not isinstance(elem, dict):
+                    rows.append(elem)
+                    continue
+                rows.append([
+                    encode_json_cell_tree(_field_type_str(f), elem.get(f.name))
+                    for f in elem_typ.fields
+                ])
+            return rows
+        if inner.startswith("list<") or inner.startswith("map<"):
+            return [encode_json_cell_tree(inner, x) for x in val]
+        return val
     if t.startswith("map<") and t.endswith(">"):
         if isinstance(val, dict):
-            return json.dumps(val, ensure_ascii=False)
+            inner = t[4:-1].strip()
+            key_t, _, val_t = inner.partition(",")
+            key_t = key_t.strip()
+            val_t = val_t.strip()
+            return {
+                encode_json_cell_tree(key_t, k) if key_t else k: encode_json_cell_tree(val_t, v)
+                for k, v in val.items()
+            }
         return val
-    class_fields = _class_field_names(t)
-    if class_fields and isinstance(val, dict):
-        return format_bracket_list([val.get(k) for k in class_fields])
-    if isinstance(val, (list, dict)):
-        return json.dumps(val, ensure_ascii=False)
+    class_typ = Type.get(t)
+    if class_typ is not None and class_typ.isClass() and isinstance(val, dict):
+        return [
+            encode_json_cell_tree(_field_type_str(f), val.get(f.name))
+            for f in class_typ.fields
+        ]
+    if isinstance(val, dict):
+        keys = set(val.keys())
+        if keys <= {"x", "y", "z"} and keys:
+            return [val.get("x"), val.get("y"), val.get("z")]
     return val
+
+
+def encode_value_for_excel(typ: str, val):
+    """Encode json/runtime value into Excel cell text/number for re-import."""
+    if val is None:
+        return None
+    tree = encode_json_cell_tree(typ, val)
+    if isinstance(tree, (list, dict)):
+        return json.dumps(tree, ensure_ascii=False)
+    return tree
 
 
 def format_int_with_base(val, int_base):
@@ -380,10 +411,13 @@ def format_int_with_base(val, int_base):
 def format_cell_value(typ: str, val, int_base=None):
     if val is None or val == "":
         t = (typ or "").strip()
+        tl = t.lower()
         if t.startswith("list<"):
             return "[]"
         if t.startswith("map<"):
             return "{}"
+        if tl == "bool":
+            return 0
         return "" if is_excel_text_type(typ) else None
     if int_base in (16, 2) and not isinstance(val, (list, dict, bool)):
         return format_int_with_base(val, int_base)
@@ -402,40 +436,60 @@ def format_leaf_value(val, int_base=None):
     return val
 
 
-def format_bracket_list(values) -> str:
-    parts = []
-    for v in values:
-        if v is None:
-            parts.append("nil")
-        elif isinstance(v, bool):
-            parts.append("1" if v else "0")
-        elif isinstance(v, (list, dict)):
-            parts.append(json.dumps(v, ensure_ascii=False))
-        else:
-            parts.append(str(v))
-    return "[" + ",".join(parts) + "]"
+def encode_bracket_element(value, field_typ=None):
+    """自定义类单元格 JSON 数组中的一个元素（与 CheckType.toClass + json.loads 对齐）。"""
+    if field_typ is not None:
+        type_name = field_typ.fullTypename or field_typ.typename
+        if field_typ.isClass() and isinstance(value, dict):
+            return [
+                encode_bracket_element(value.get(f.name), f.type)
+                for f in field_typ.fields
+            ]
+        if not field_typ.isClass():
+            return encode_json_cell_tree(type_name, value)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if isinstance(value, dict):
+        keys = set(value.keys())
+        if keys <= {"x", "y", "z"} and keys:
+            return [value.get("x"), value.get("y"), value.get("z")]
+    return value
+
+
+def format_bracket_list(values, class_typ=None) -> str:
+    fields = class_typ.fields if class_typ is not None and class_typ.isClass() else None
+    encoded = []
+    for i, v in enumerate(values):
+        ft = fields[i].type if fields and i < len(fields) else None
+        encoded.append(encode_bracket_element(v, ft))
+    return json.dumps(encoded, ensure_ascii=False)
+
+
+def class_typ_for_field_type(field_type: str):
+    """list<Class> or Class field type -> Class Type (for bracket encoding)."""
+    inner = (field_type or "").strip()
+    if inner.startswith("list<") and inner.endswith(">"):
+        inner = inner[5:-1].strip()
+    return Type.get(inner)
 
 
 def format_split_element_cell(field_type: str, layout: dict, elem):
     """Format one list element for P2 (one element per column)."""
     if elem is None:
         return None
+    typ = class_typ_for_field_type(field_type)
     if isinstance(elem, dict):
         element_keys = layout.get("elementKeys")
         if not element_keys:
-            typ = Type.get((field_type or "").strip())
-            # list<Class> → Class
-            inner = field_type or ""
-            if inner.startswith("list<") and inner.endswith(">"):
-                inner = inner[5:-1].strip()
-                typ = Type.get(inner)
             if typ is not None and typ.isClass() and typ.fields:
                 element_keys = [f.name for f in typ.fields]
             else:
                 element_keys = list(elem.keys())
-        return format_bracket_list([elem.get(k) for k in element_keys])
+        return format_bracket_list([elem.get(k) for k in element_keys], typ)
     if isinstance(elem, (list, tuple)):
-        return format_bracket_list(list(elem))
+        return format_bracket_list(list(elem), typ)
     return format_leaf_value(elem)
 
 

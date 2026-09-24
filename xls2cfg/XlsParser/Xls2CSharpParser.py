@@ -168,6 +168,15 @@ class Xls2CSharpParser(XlsParser):
         cls.writeTo(os.path.join(outputPath, context["className"]), template.render(context))
 
     @classmethod
+    def useExportedEnumType(cls, typ):
+        """exportType=true 的枚举：生成 enum 类型，C# 字段用该枚举名。"""
+        return (
+            typ.isEnum()
+            and getattr(typ, "exportType", False)
+            and not getattr(typ, "externType", None)
+        )
+
+    @classmethod
     def formatFieldFromJson(cls,typ,fieldIndex):
         field = typ.fields[fieldIndex]
         fieldInitStatment = ""
@@ -176,7 +185,18 @@ class Xls2CSharpParser(XlsParser):
         fieldTypename = fieldType.typename
         fieldName = field.name
         langFieldName = typ.context["fields"][field.index]["name"]
-        if rawType.isEnum() and getattr(rawType, "externType", None):
+        if cls.useExportedEnumType(rawType):
+            enumName = cls.formatClassName(rawType.typename)
+            under = cls.formatInternalType(rawType)
+            fieldInitStatment = (
+                'this.{langFieldName} = ({enumName})({under})jsonNode["{fieldName}"];'
+            ).format(
+                langFieldName=langFieldName,
+                enumName=enumName,
+                under=under,
+                fieldName=fieldName,
+            )
+        elif rawType.isEnum() and getattr(rawType, "externType", None):
             under = cls.formatInternalType(rawType)
             raw_expr = 'jsonNode["%s"]' % fieldName
             internal_expr = "(%s)%s" % (under, raw_expr)
@@ -260,7 +280,17 @@ class Xls2CSharpParser(XlsParser):
         fieldTypename = fieldType.typename
         fieldName = field.name
         langFieldName = typ.context["fields"][field.index]["name"]
-        if rawType.isEnum() and getattr(rawType, "externType", None):
+        if cls.useExportedEnumType(rawType):
+            under_read = "bs.%s()" % cls.getReadFunc(rawType.underlyingType())
+            enumName = cls.formatClassName(rawType.typename)
+            under = cls.formatInternalType(rawType)
+            fieldInitStatment = "this.{langFieldName} = ({enumName})({under}){read};".format(
+                langFieldName=langFieldName,
+                enumName=enumName,
+                under=under,
+                read=under_read,
+            )
+        elif rawType.isEnum() and getattr(rawType, "externType", None):
             under_read = "bs.%s()" % cls.getReadFunc(rawType.underlyingType())
             under = cls.formatInternalType(rawType)
             internal_expr = "(%s)%s" % (under, under_read)
@@ -339,6 +369,9 @@ class Xls2CSharpParser(XlsParser):
             if typ.isEnum():
                 typ = typ.underlyingType()
         elif typ.isEnum():
+            if cls.useExportedEnumType(typ):
+                under = cls.formatInternalType(typ)
+                expr = "(%s)%s" % (under, expr)
             typ = typ.underlyingType()
         if typ.isClass():
             return "", "%s != null ? %s.ToJson() : new JSONObject()" % (expr, expr)
@@ -401,6 +434,9 @@ class Xls2CSharpParser(XlsParser):
             if typ.isEnum():
                 typ = typ.underlyingType()
         elif typ.isEnum():
+            if cls.useExportedEnumType(typ):
+                under = cls.formatInternalType(typ)
+                expr = "(%s)%s" % (under, expr)
             typ = typ.underlyingType()
         if typ.isClass():
             className = cls.formatClassName(typ.typename)
@@ -447,6 +483,10 @@ class Xls2CSharpParser(XlsParser):
         """Read wire as internal type, then convert to extern if mapped (inline, no named temp)."""
         if typ.isEnum():
             under_read = "bs.%s()" % cls.getReadFunc(typ.underlyingType())
+            if cls.useExportedEnumType(typ):
+                enumName = cls.formatClassName(typ.typename)
+                under = cls.formatInternalType(typ)
+                return "(%s)(%s)%s" % (enumName, under, under_read)
             if getattr(typ, "externType", None):
                 under = cls.formatInternalType(typ)
                 return cls._to_extern(typ, "(%s)%s" % (under, under_read))
@@ -588,6 +628,8 @@ class Xls2CSharpParser(XlsParser):
             return typ.externType
         typename = typ.typename
         if typ.isEnum():
+            if cls.useExportedEnumType(typ):
+                return cls.formatClassName(typ.typename)
             return cls.formatType(typ.underlyingType())
         if typ.isClass():
             return typename

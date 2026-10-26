@@ -459,7 +459,8 @@ class Sheet(object):
                     self.header[j] = "desc"
         line = []
         self.rows.append(line)
-        for i,row in enumerate(self.sheet.iter_rows(min_row=self.headerRow+1,max_row=self.maxRow,values_only=True)):
+        for i,cells in enumerate(self.sheet.iter_rows(min_row=self.headerRow+1,max_row=self.maxRow)):
+            row = [cell.value for cell in cells]
             if row[0] is None or (type(row[0]) == str and row[0].isspace()):
                 # 遇到空行则结束
                 break
@@ -468,9 +469,9 @@ class Sheet(object):
                 self.col2type[i] = None
                 line.append(None)
                 continue
+            self.col2comment[i] = None
             for j in range(0,self.maxCol):
                 value = row[j]
-                self.col2comment[i] = None
                 if self.header[j] == "key":
                     if Config.isKeyword(value):
                         raise Exception(self.message(i,j,value + " is keywords"))
@@ -509,6 +510,9 @@ class Sheet(object):
                         self.col2tags[i] = None
                 elif self.header[j] == "desc":
                     self.col2desc[i] = value
+                    # 备注写在 desc 单元格批注上（与反向生成 Excel 一致）
+                    if cells[j].comment is not None:
+                        self.col2comment[i] = cells[j].comment.text
         self.dataRow = 1
         self.maxCol = self.maxRow
         self.maxRow = self.headerRow + 1    # 1 row

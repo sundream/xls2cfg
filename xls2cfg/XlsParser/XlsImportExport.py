@@ -1717,12 +1717,15 @@ def export_code_from_schema(schema_path, output_dir, output_formats, parser_for_
         if o.get("kind") == KIND_1D:
             typ.singleton = True
         if not getattr(typ, "singleton", False) and typ.fields:
-            id_idx = 0
+            id_idx = -1
             for i, f in enumerate(typ.fields):
                 if f.name == "id":
                     id_idx = i
                     break
-            typ.setIdField(id_idx)
+            if id_idx < 0 and o.get("kind") in (KIND_1D, KIND_2D):
+                id_idx = 0
+            if id_idx >= 0:
+                typ.setIdField(id_idx)
 
     XlsParser.ignoreGenTables = True
     written = []

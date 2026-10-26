@@ -85,9 +85,33 @@ class ByteStream:
     def WriteDouble(self, value):
         self.Write(struct.pack('<d', float(value)), 0, 8)
 
+    def WriteSize(self, value):
+        if value < 0:
+            raise Exception("[ByteStream.WriteSize] size must be non-negative")
+        v = int(value)
+        while v >= 0x80:
+            self.WriteByte((v & 0x7F) | 0x80)
+            v >>= 7
+        self.WriteByte(v)
+
+    def ReadSize(self):
+        result = 0
+        shift = 0
+        while True:
+            b = self.ReadByte()
+            result |= (b & 0x7F) << shift
+            if (b & 0x80) == 0:
+                break
+            shift += 7
+            if shift > 35:
+                raise Exception("[ByteStream.ReadSize] varint overflow")
+        return result
+
     def WriteString(self, str):
+        if str is None:
+            str = ""
         data = str.encode('utf-8')
-        self.WriteUInt16(len(data))
+        self.WriteSize(len(data))
         self.Write(data, 0, len(data))
 
     def WriteJson(self,value):
@@ -163,7 +187,7 @@ class ByteStream:
         return struct.unpack('<d', self.ReadBytes(8))[0]
 
     def ReadString(self):
-        length = self.ReadUInt16()
+        length = self.ReadSize()
         bytes = self.ReadBytes(length)
         return bytes.decode('utf-8')
 
@@ -267,12 +291,12 @@ class ByteStream:
             self.WriteUInt64(value)
         elif fieldTypename == "list":
             lst = value
-            self.WriteUInt8(len(lst))
+            self.WriteSize(len(lst))
             for value in lst:
                 self.WriteValue(fieldType.valueType,value)
         elif fieldTypename == "map":
             map = value
-            self.WriteUInt8(len(map))
+            self.WriteSize(len(map))
             for key,value in map.items():
                 self.WriteValue(fieldType.keyType,key)
                 self.WriteValue(fieldType.valueType,value)
@@ -320,13 +344,13 @@ class ByteStream:
             value = self.ReadUInt64()
         elif fieldTypename == "list":
             lst = []
-            length = self.ReadUInt8()
+            length = self.ReadSize()
             for i in range(length):
                 lst.append(self.ReadValue(fieldType.valueType))
             value = lst
         elif fieldTypename == "map":
             map = {}
-            length = self.ReadUInt8()
+            length = self.ReadSize()
             for i in range(length):
                 key = self.ReadValue(fieldType.keyType)
                 value = self.ReadValue(fieldType.valueType)

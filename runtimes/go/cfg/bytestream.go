@@ -115,10 +115,48 @@ func (bs *ByteStream) WriteDouble(value float64) {
 	bs.WriteFloat64(value)
 }
 
+// WriteSize writes an unsigned varint (LEB128) length prefix.
+func (bs *ByteStream) WriteSize(value int) {
+	if value < 0 {
+		panic("WriteSize: size must be non-negative")
+	}
+	v := uint32(value)
+	for v >= 0x80 {
+		bs.WriteByte(byte((v & 0x7F) | 0x80))
+		v >>= 7
+	}
+	bs.WriteByte(byte(v))
+}
+
+// ReadSize reads an unsigned varint (LEB128) length prefix.
+func (bs *ByteStream) ReadSize() (int, error) {
+	var result uint32
+	shift := 0
+	for {
+		b, err := bs.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		result |= uint32(b&0x7F) << shift
+		if b&0x80 == 0 {
+			break
+		}
+		shift += 7
+		if shift > 35 {
+			return 0, errors.New("ReadSize: varint overflow")
+		}
+	}
+	if result > math.MaxInt32 {
+		return 0, errors.New("ReadSize: size too large")
+	}
+	return int(result), nil
+}
+
 func (bs *ByteStream) WriteString(value string) {
-	bs.WriteUInt16(uint16(len(value)))
-	n, err := bs.buffer.WriteString(value)
-	if err != nil || n != len(value) {
+	data := []byte(value)
+	bs.WriteSize(len(data))
+	n, err := bs.buffer.Write(data)
+	if err != nil || n != len(data) {
 		panic(err)
 	}
 }
@@ -243,13 +281,13 @@ func (bs *ByteStream) ReadDouble() (float64, error) {
 }
 
 func (bs *ByteStream) ReadString() (string, error) {
-	length, err := bs.ReadUInt16()
+	length, err := bs.ReadSize()
 	if err != nil {
 		return "", err
 	}
 	buf := make([]byte, length)
 	n, err := io.ReadFull(bs.buffer, buf)
-	if err != nil || n != int(length) {
+	if err != nil || n != length {
 		return "", err
 	}
 	return string(buf), nil
@@ -302,12 +340,12 @@ func ReadList[V any](bs *ByteStream, result *[]V) error {
 }
 
 func readList(bs *ByteStream, v reflect.Value) error {
-	length, err := bs.ReadUInt8()
+	length, err := bs.ReadSize()
 	if err != nil {
 		return err
 	}
-	slice := reflect.MakeSlice(v.Type(), int(length), int(length))
-	for i := 0; i < int(length); i++ {
+	slice := reflect.MakeSlice(v.Type(), length, length)
+	for i := 0; i < length; i++ {
 		if err := readValue(bs, slice.Index(i)); err != nil {
 			return err
 		}
@@ -321,12 +359,12 @@ func ReadMap[K comparable, V any](bs *ByteStream, result *map[K]V) error {
 }
 
 func readMap(bs *ByteStream, v reflect.Value) error {
-	length, err := bs.ReadUInt8()
+	length, err := bs.ReadSize()
 	if err != nil {
 		return err
 	}
-	mapInstance := reflect.MakeMapWithSize(v.Type(), int(length))
-	for i := 0; i < int(length); i++ {
+	mapInstance := reflect.MakeMapWithSize(v.Type(), length)
+	for i := 0; i < length; i++ {
 		key := reflect.New(v.Type().Key()).Elem()
 		value := reflect.New(v.Type().Elem()).Elem()
 		if err := readValue(bs, key); err != nil {
@@ -486,10 +524,7 @@ func WriteList[V any](bs *ByteStream, list []V) {
 
 func writeList(bs *ByteStream, v reflect.Value) {
 	length := v.Len()
-	if length > 255 {
-		panic("list length > 255")
-	}
-	bs.WriteUInt8(uint8(length))
+	bs.WriteSize(length)
 	for i := 0; i < length; i++ {
 		writeValue(bs, v.Index(i))
 	}
@@ -501,10 +536,7 @@ func WriteMap[K comparable, V any](bs *ByteStream, m map[K]V) {
 
 func writeMap(bs *ByteStream, v reflect.Value) {
 	length := v.Len()
-	if length > 255 {
-		panic("map length > 255")
-	}
-	bs.WriteUInt8(uint8(length))
+	bs.WriteSize(length)
 	for _, key := range v.MapKeys() {
 		writeValue(bs, key)
 		writeValue(bs, v.MapIndex(key))

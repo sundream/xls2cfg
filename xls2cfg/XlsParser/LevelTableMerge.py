@@ -254,6 +254,22 @@ def synthesize_with_level_schema(base_schema, level_table_name=None):
                     entry.pop("constraint", None)
         fields.append(entry)
 
+    if not any(f.get("name") == "level" for f in fields):
+        insert_at = 0
+        for i, f in enumerate(fields):
+            if f.get("name") == "id":
+                insert_at = i + 1
+                break
+        fields.insert(
+            insert_at,
+            {
+                "name": "level",
+                "type": "int32",
+                "displayName": "等级",
+                "remarks": "合并行等级（0 起）",
+            },
+        )
+
     display = base_schema.get("displayName") or name
     return {
         "kind": base_schema.get("kind", 2),

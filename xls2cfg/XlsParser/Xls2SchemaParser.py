@@ -60,6 +60,8 @@ def format_constraint(constraint, seperator=";"):
         elif k == "default":
             if v is None:
                 parts.append("default=nil")
+            elif isinstance(v, bool):
+                parts.append("default=%d" % v)
             else:
                 parts.append("default=%s" % v)
         elif k == "limit":

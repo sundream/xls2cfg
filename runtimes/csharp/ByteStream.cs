@@ -145,10 +145,55 @@ namespace Cfg {
             Write(bytes, 0, bytes.Length);
         }
 
+        /// <summary>Unsigned varint (LEB128) length prefix.</summary>
+        public void WriteSize(int value) {
+            if (value < 0) {
+                throw new ArgumentOutOfRangeException(nameof(value), "size must be non-negative");
+            }
+            uint v = (uint)value;
+            while (v >= 0x80) {
+                WriteByte((byte)((v & 0x7F) | 0x80));
+                v >>= 7;
+            }
+            WriteByte((byte)v);
+        }
+
+        /// <summary>Unsigned varint (LEB128) length prefix.</summary>
+        public int ReadSize() {
+            uint result = 0;
+            int shift = 0;
+            while (true) {
+                EnsureCanRead(1);
+                byte b = buffer[pos++];
+                result |= (uint)(b & 0x7F) << shift;
+                if ((b & 0x80) == 0) {
+                    break;
+                }
+                shift += 7;
+                if (shift > 35) {
+                    throw new Exception("[ByteStream.ReadSize] varint overflow");
+                }
+            }
+            if (result > int.MaxValue) {
+                throw new Exception("[ByteStream.ReadSize] size too large");
+            }
+            return (int)result;
+        }
+
+        private void EnsureCanRead(int nbytes) {
+            if (pos + nbytes > size) {
+                throw new EndOfStreamException(
+                    string.Format("[ByteStream] read past end: pos={0}, need={1}, size={2}", pos, nbytes, size));
+            }
+        }
+
         public void WriteString(string str) {
+            if (str == null) {
+                str = "";
+            }
             byte[] bytes = Encoding.UTF8.GetBytes(str);
-            WriteUInt16((UInt16)bytes.Length);
-            Write(bytes,0,bytes.Length);
+            WriteSize(bytes.Length);
+            Write(bytes, 0, bytes.Length);
         }
 
         public void WriteJson(JSONNode value) {
@@ -269,10 +314,11 @@ namespace Cfg {
         }
 
         public string ReadString() {
-            int length = ReadUInt16();
+            int length = ReadSize();
+            EnsureCanRead(length);
             int readPos = pos;
             pos += length;
-            return Encoding.UTF8.GetString(buffer,readPos,length);
+            return Encoding.UTF8.GetString(buffer, readPos, length);
         }
 
         public JSONNode ReadJson() {
@@ -346,10 +392,7 @@ namespace Cfg {
 
         public void WriteList<V>(List<V> list) {
             int length = list == null ? 0 : list.Count;
-            if (length > 255) {
-                throw new Exception("list length > 255");
-            }
-            WriteUInt8((byte)length);
+            WriteSize(length);
             for (int i = 0; i < length; i++) {
                 WriteValue<V>(list[i]);
             }
@@ -357,10 +400,7 @@ namespace Cfg {
 
         public void WriteDictionary<K,V>(Dictionary<K,V> dict) {
             int length = dict == null ? 0 : dict.Count;
-            if (length > 255) {
-                throw new Exception("map length > 255");
-            }
-            WriteUInt8((byte)length);
+            WriteSize(length);
             if (dict == null) {
                 return;
             }
@@ -371,7 +411,7 @@ namespace Cfg {
         }
 
         public List<V> ReadList<V>() {
-            int length = ReadUInt8();
+            int length = ReadSize();
             List<V> list = new List<V>(length);
             for (int i = 0; i < length; i++)
             {
@@ -381,7 +421,7 @@ namespace Cfg {
         }
 
         public Dictionary<K,V> ReadDictionary<K,V>() {
-            int length = ReadUInt8();
+            int length = ReadSize();
             Dictionary<K,V> dict = new Dictionary<K,V>(length);
             for (int i = 0; i < length; i++) {
                 dict.Add(ReadValue<K>(),ReadValue<V>());
@@ -438,7 +478,7 @@ namespace Cfg {
                     var genericType = type.GetGenericTypeDefinition();
                     if (genericType == typeof(List<>))
                     {
-                        int length = ReadUInt8();
+                        int length = ReadSize();
                         Type collectionType = type.GetInterface("ICollection`1");
                         Type valueType = collectionType.GetGenericArguments()[0];
                         var f = collectionType.GetMethod("Add");
@@ -451,7 +491,7 @@ namespace Cfg {
                     }
                     else if (genericType == typeof(Dictionary<,>))
                     {
-                        int length = ReadUInt8();
+                        int length = ReadSize();
                         Type collectionType = type.GetInterface("ICollection`1");
                         Type keyValuePairType = collectionType.GetGenericArguments()[0];
                         var f = collectionType.GetMethod("Add");
@@ -531,7 +571,7 @@ namespace Cfg {
                     {
                         List<object> list = (List<object>)value;
                         int length = list.Count;
-                        WriteUInt8((byte)length);
+                        WriteSize(length);
                         Type collectionType = type.GetInterface("ICollection`1");
                         Type valueType = collectionType.GetGenericArguments()[0];
                         for (int i = 0; i < length; i++)
@@ -543,7 +583,7 @@ namespace Cfg {
                     {
                         Dictionary<object,object> map = (Dictionary<object,object>)value;
                         int length = map.Count;
-                        WriteUInt8((byte)length);
+                        WriteSize(length);
                         Type collectionType = type.GetInterface("ICollection`1");
                         Type keyValuePairType = collectionType.GetGenericArguments()[0];
                         Type keyType = keyValuePairType.GetGenericArguments()[0];

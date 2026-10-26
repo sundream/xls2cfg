@@ -335,11 +335,11 @@ class Xls2CSharpParser(XlsParser):
             fieldInitStatment = 'this.{langFieldName} = bs.ReadJson();'.format(fieldName=fieldName,langFieldName=langFieldName)
         elif fieldTypename == "list":
             value_expr = cls._read_expr(fieldType.valueType)
-            fieldInitStatment = '{{int length = bs.ReadUInt8(); this.{langFieldName} = new List<{valueType}>(length); for (int i = 0; i < length; i++) {{ this.{langFieldName}.Add({value_expr}); }} }}'.format(langFieldName=langFieldName,valueType=cls.formatType(fieldType.valueType),value_expr=value_expr)
+            fieldInitStatment = '{{int length = bs.ReadSize(); this.{langFieldName} = new List<{valueType}>(length); for (int i = 0; i < length; i++) {{ this.{langFieldName}.Add({value_expr}); }} }}'.format(langFieldName=langFieldName,valueType=cls.formatType(fieldType.valueType),value_expr=value_expr)
         elif fieldTypename == "map":
             key_expr = cls._read_expr(fieldType.keyType)
             value_expr = cls._read_expr(fieldType.valueType)
-            fieldInitStatment = '{{int length = bs.ReadUInt8(); this.{langFieldName} = new Dictionary<{keyType}, {valueType}>(length); for (int i = 0; i < length; i++) {{ this.{langFieldName}.Add({key_expr}, {value_expr}); }} }}'.format(langFieldName=langFieldName,keyType=cls.formatType(fieldType.keyType), valueType=cls.formatType(fieldType.valueType),key_expr=key_expr,value_expr=value_expr)
+            fieldInitStatment = '{{int length = bs.ReadSize(); this.{langFieldName} = new Dictionary<{keyType}, {valueType}>(length); for (int i = 0; i < length; i++) {{ this.{langFieldName}.Add({key_expr}, {value_expr}); }} }}'.format(langFieldName=langFieldName,keyType=cls.formatType(fieldType.keyType), valueType=cls.formatType(fieldType.valueType),key_expr=key_expr,value_expr=value_expr)
         else:
             raise Exception("unsupported type: %s" % field.type.fullTypename)
         return fieldInitStatment
@@ -456,9 +456,8 @@ class Xls2CSharpParser(XlsParser):
             inner = cls._binary_value(typ.valueType, "%s[%s]" % (lvar, idx), depth + 1)
             return (
                 "{var %s = %s; int %s = %s == null ? 0 : %s.Count; "
-                "if (%s > 255) throw new Exception(\"list length > 255\"); "
-                "bs.WriteUInt8((byte)%s); for (int %s = 0; %s < %s; %s++) { %s }}"
-            ) % (lvar, expr, nvar, lvar, lvar, nvar, nvar, idx, idx, nvar, idx, inner)
+                "bs.WriteSize(%s); for (int %s = 0; %s < %s; %s++) { %s }}"
+            ) % (lvar, expr, nvar, lvar, lvar, nvar, idx, idx, nvar, idx, inner)
         if typename == "map":
             mvar = "_m%d" % depth
             nvar = "_n%d" % depth
@@ -467,9 +466,8 @@ class Xls2CSharpParser(XlsParser):
             bval = cls._binary_value(typ.valueType, "%s.Value" % kv, depth + 1)
             return (
                 "{var %s = %s; int %s = %s == null ? 0 : %s.Count; "
-                "if (%s > 255) throw new Exception(\"map length > 255\"); "
-                "bs.WriteUInt8((byte)%s); if (%s != null) { foreach (var %s in %s) { %s %s } }}"
-            ) % (mvar, expr, nvar, mvar, mvar, nvar, nvar, mvar, kv, mvar, bkey, bval)
+                "bs.WriteSize(%s); if (%s != null) { foreach (var %s in %s) { %s %s } }}"
+            ) % (mvar, expr, nvar, mvar, mvar, nvar, mvar, kv, mvar, bkey, bval)
         raise Exception("unsupported write type: %s" % typ.fullTypename)
 
     @classmethod

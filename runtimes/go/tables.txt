@@ -104,7 +104,7 @@ func DeserializeTableFromBinary[K comparable, P any, V ~*P](table map[K]V, idNam
 		return nil
 	}
 	bs := NewByteStream(buf)
-	count,err := bs.ReadUInt16()
+	count,err := bs.ReadSize()
 	if err != nil {
 		return err
 	}
@@ -171,12 +171,9 @@ func SerializeTableToJson[K cmp.Ordered, P any, V ~*P](table map[K]V) ([]byte, e
 
 func SerializeTableToBinary[K cmp.Ordered, P any, V ~*P](table map[K]V) ([]byte, error) {
 	count := len(table)
-	if count > 65535 {
-		return nil, fmt.Errorf("table row count > 65535")
-	}
 	bs := NewByteStream(nil)
 	defer DestroyByteStream(bs)
-	bs.WriteUInt16(uint16(count))
+	bs.WriteSize(count)
 	if count > 0 {
 		keys := make([]K, 0, count)
 		for k := range table {

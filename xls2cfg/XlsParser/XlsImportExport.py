@@ -8,8 +8,6 @@
 - field.layout restores merge-split columns (P1 keys / P2 element-per-column)
 """
 
-from __future__ import annotations
-
 import json
 import os
 import re
@@ -1061,7 +1059,7 @@ def read_binary_data(schema: dict, binary_path: Path, tags=None):
         for name, typ in field_types:
             row[name] = bs.ReadValue(typ)
         return row
-    data_row = bs.ReadUInt16()
+    data_row = bs.ReadSize()
     rows = []
     for _ in range(data_row):
         row = {}

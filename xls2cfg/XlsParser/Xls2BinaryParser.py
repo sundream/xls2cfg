@@ -40,7 +40,7 @@ class Xls2BinaryParser(XlsParser):
         self.writeFile(self.sheet.filename)
 
     def parseSheet(self):
-        self.bs.WriteUInt16(self.sheet.dataRow)
+        self.bs.WriteSize(self.sheet.dataRow)
         for row in range(0,self.sheet.dataRow):
             fieldIndex = -1
             for col in range(0,self.sheet.maxCol):
@@ -71,7 +71,7 @@ class Xls2BinaryParser(XlsParser):
                 fieldDict[field.name] = value
             data = fieldDict
         else:
-            dataRow = self.bs.ReadUInt16()
+            dataRow = self.bs.ReadSize()
             for i in range(dataRow):
                 fieldDict = {}
                 for field in self.type.fields:

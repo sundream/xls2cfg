@@ -98,7 +98,7 @@ namespace {{namespace}} {
             }
             ByteStream entry = ByteStream.GetFromPool();
             entry.CopyBuffer(data);
-            int count = entry.ReadUInt16();
+            int count = entry.ReadSize();
             Dictionary<{{idTypename}}, {{className}}> table = new Dictionary<{{idTypename}}, {{className}}>(count);
             {{className}} obj = null;
             for (int i=0; i<count; i++) {
@@ -122,11 +122,8 @@ namespace {{namespace}} {
 
         public static byte[] SerializeTableToBinary(Dictionary<{{idTypename}},{{className}}> table) {
             int count = table == null ? 0 : table.Count;
-            if (count > 65535) {
-                throw new Exception("table row count > 65535");
-            }
             ByteStream bs = ByteStream.GetFromPool();
-            bs.WriteUInt16((ushort)count);
+            bs.WriteSize(count);
             if (count > 0) {
                 List<{{idTypename}}> keys = new List<{{idTypename}}>(table.Keys);
                 keys.Sort();

@@ -18,8 +18,6 @@ Schema convention (base table ``id`` column constraint)::
 - Level table must define ``level`` / ``int32`` (等级，从 0 起).
 """
 
-from __future__ import annotations
-
 import json
 import os
 

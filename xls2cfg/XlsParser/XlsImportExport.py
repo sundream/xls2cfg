@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 from collections import OrderedDict
 from pathlib import Path
 
@@ -327,6 +328,29 @@ def _field_type_str(field) -> str:
     return ft.fullTypename or ft.typename
 
 
+def encode_kv_element(value):
+    """JSON shorthand map<string,KV_Element> value -> KV_Element field list."""
+    if isinstance(value, dict):
+        return [
+            encode_json_cell_tree("int32", value.get("type")),
+            encode_json_cell_tree("int64", value.get("i")),
+            encode_json_cell_tree("double", value.get("d")),
+            encode_json_cell_tree("bool", value.get("b")),
+            encode_json_cell_tree("string", value.get("s")),
+            encode_json_cell_tree("string", value.get("desc")),
+            encode_json_cell_tree("int32", value.get("sort")),
+        ]
+    if isinstance(value, bool):
+        return [2, 0, 0, 1 if value else 0, "", "", 0]
+    if isinstance(value, int):
+        return [0, value, 0, 0, "", "", 0]
+    if isinstance(value, float):
+        return [1, 0, value, 0, "", "", 0]
+    if isinstance(value, str):
+        return [3, 0, 0, 0, value, "", 0]
+    return [0, 0, 0, 0, "", "", 0]
+
+
 def encode_json_cell_tree(typ: str, val):
     """Build a JSON-serializable tree for one Excel cell (forward import uses json.loads)."""
     if val is None:
@@ -364,6 +388,11 @@ def encode_json_cell_tree(typ: str, val):
             key_t, _, val_t = inner.partition(",")
             key_t = key_t.strip()
             val_t = val_t.strip()
+            if val_t == "KV_Element":
+                return {
+                    encode_json_cell_tree(key_t, k) if key_t else k: encode_kv_element(v)
+                    for k, v in val.items()
+                }
             return {
                 encode_json_cell_tree(key_t, k) if key_t else k: encode_json_cell_tree(val_t, v)
                 for k, v in val.items()
@@ -1431,6 +1460,73 @@ def write_enum_schemas_from_excel(excel_dir, schema_dir, enum_path=None):
     return written
 
 
+def write_data_from_data(
+    schema_path,
+    output_dir,
+    output_formats,
+    parser_for_format,
+    json_path=None,
+    binary_path=None,
+    tags=None,
+):
+    """schema + json|binary -> {output}/{format}/ without leaving an xlsx behind.
+
+    The temporary workbook is only an internal bridge so binary/json/schema
+    all use the same parser path as --from-xlsx.
+    """
+    with tempfile.TemporaryDirectory(prefix="xls2cfg_data_") as tmp:
+        prev_upper = Config.classNameFirstUpper
+        Config.classNameFirstUpper = True
+        try:
+            xlsx_path = write_xlsx_from_data(
+                Path(schema_path),
+                Path(tmp),
+                json_path=Path(json_path) if json_path else None,
+                binary_path=Path(binary_path) if binary_path else None,
+                tags=tags,
+            )
+            return write_data_from_xlsx(
+                xlsx_path, output_dir, output_formats, parser_for_format
+            )
+        finally:
+            Config.classNameFirstUpper = prev_upper
+
+
+def write_data_from_data_dir(
+    schema_dir,
+    output_dir,
+    output_formats,
+    parser_for_format,
+    json_dir=None,
+    binary_dir=None,
+    tags=None,
+):
+    """Batch schema dir + json/binary dir -> {output}/{format}/."""
+    with tempfile.TemporaryDirectory(prefix="xls2cfg_data_") as tmp:
+        prev_upper = Config.classNameFirstUpper
+        Config.classNameFirstUpper = True
+        try:
+            paths = write_xlsx_from_dir(
+                Path(schema_dir),
+                Path(tmp),
+                json_dir=Path(json_dir) if json_dir else None,
+                binary_dir=Path(binary_dir) if binary_dir else None,
+                tags=tags,
+            )
+            tables = []
+            for path in paths:
+                if str(path).lower().endswith(".xlsx"):
+                    tables.extend(
+                        write_data_from_xlsx(
+                            path, output_dir, output_formats, parser_for_format
+                        )
+                        or []
+                    )
+            return tables
+        finally:
+            Config.classNameFirstUpper = prev_upper
+
+
 def write_data_from_xlsx(
     xlsx_path,
     output_dir,
@@ -1603,7 +1699,14 @@ def _collect_schema_type_objects(schema_path):
     if not path.exists():
         raise SystemExit("schema path not found: %s" % path)
     if path.is_file():
-        return _load_schema_file_objects(path)
+        objs = _load_schema_file_objects(path)
+        # 单表导出也要带上同目录的 __enum__.json：否则枚举字段无法按 exportType 解析，
+        # 会被当成普通类生成（与 xlsx 流程不一致，出现 new Xxx(...) / ToJson / Serialize）。
+        if path.name != ENUM_JSON:
+            enum_path = path.parent / ENUM_JSON
+            if enum_path.is_file():
+                objs.extend(_load_schema_file_objects(enum_path))
+        return objs
     objs = []
     for p in sorted(path.glob("*.json")):
         objs.extend(_load_schema_file_objects(p))

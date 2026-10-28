@@ -22,6 +22,8 @@ from XlsParser.XlsImportExport import (
     write_xlsx_from_data,
     write_xlsx_from_dir,
     write_data_from_xlsx,
+    write_data_from_data,
+    write_data_from_data_dir,
     write_class_schemas_from_excel,
     write_enum_schemas_from_excel,
     export_code_from_schema,
@@ -197,6 +199,10 @@ e.g:
     python %prog --input=../Excel --output=../Output/Client --output-formats=csharp,binary,json,schema --tags=c
     python %prog --from-xlsx-dir=../Excel --output=../Output/Client --output-formats=csharp,binary,json,schema --tags=c
     python %prog --from-schema=schema.json --from-json=data.json --out-xlsx-dir=../Excel
+    python %prog --from-schema=schema.json --from-json=data.json --output=../Output/Client --output-formats=binary
+    python %prog --from-schema=schema.json --from-binary=data.bytes --output=../Output/Client --output-formats=json
+    python %prog --from-schema-dir=schema --from-json-dir=json --output=../Output/Client --output-formats=binary
+    python %prog --from-schema-dir=schema --from-binary-dir=binary --output=../Output/Client --output-formats=json
     python %prog --from-schema=schema.json --from-binary=data.bytes --out-xlsx-dir=../Excel
     python %prog --from-schema-dir=schema --from-json-dir=json --out-xlsx-dir=../Excel
     python %prog --from-xlsx=a.xlsx --output=../Output/Client --output-formats=schema,json,binary,csharp
@@ -207,14 +213,14 @@ e.g:
     parser.add_option("-c","--config",help="[optional] json config file; CLI args override file values")
     parser.add_option("-x","--onlyExportChange",action="store_true",default=False,help="[optional] only export change files")
     # data+schema -> xlsx (single)
-    parser.add_option("--from-schema", dest="fromSchema", help="single-table schema json -> xlsx (filename from schema.workbook)")
-    parser.add_option("--from-json", dest="fromJson", help="single-table json data -> xlsx")
-    parser.add_option("--from-binary", dest="fromBinary", help="single-table binary data -> xlsx")
-    # data+schema -> xlsx (batch / single share --out-xlsx-dir)
-    parser.add_option("--from-schema-dir", dest="fromSchemaDir", help="schema dir for batch -> xlsx")
-    parser.add_option("--from-json-dir", dest="fromJsonDir", help="json dir for batch -> xlsx")
-    parser.add_option("--from-binary-dir", dest="fromBinaryDir", help="binary dir for batch -> xlsx")
-    parser.add_option("--out-xlsx-dir", dest="outXlsxDir", help="output xlsx directory; filename from schema.workbook")
+    parser.add_option("--from-schema", dest="fromSchema", help="single-table schema json -> xlsx, or schema+json/binary -> output formats when --output is given")
+    parser.add_option("--from-json", dest="fromJson", help="single-table json data -> xlsx or output formats")
+    parser.add_option("--from-binary", dest="fromBinary", help="single-table binary data -> xlsx or output formats")
+    # data+schema -> xlsx or direct output formats
+    parser.add_option("--from-schema-dir", dest="fromSchemaDir", help="schema dir for batch -> xlsx or output formats")
+    parser.add_option("--from-json-dir", dest="fromJsonDir", help="json dir for batch -> xlsx or output formats")
+    parser.add_option("--from-binary-dir", dest="fromBinaryDir", help="binary dir for batch -> xlsx or output formats")
+    parser.add_option("--out-xlsx-dir", dest="outXlsxDir", help="output xlsx directory; omit to write --output-formats directly")
     # xlsx -> data/code
     parser.add_option("--from-xlsx", dest="fromXlsx", help="single xlsx -> {output}/{format}/")
     parser.add_option("--export-code-from-schema", dest="exportCodeFromSchema", help="export code types from schema dir or a single schema json; dependent types are not auto-exported")
@@ -257,7 +263,28 @@ e.g:
         export_tags = [t.strip() for t in options.exportTags.split(",") if t.strip()]
 
     # --- round-trip modes (no --config required) ---
+    direct_formats = parse_csv_list(options.outputFormats)
+    direct_mode = bool(
+        options.outputDir and direct_formats and not options.outXlsxDir
+    )
+
     if options.fromSchemaDir:
+        if direct_mode:
+            if not options.fromJsonDir and not options.fromBinaryDir:
+                parser.error(
+                    "--from-json-dir or --from-binary-dir required "
+                    "(schema+data -> output format)"
+                )
+            write_data_from_data_dir(
+                options.fromSchemaDir,
+                options.outputDir,
+                direct_formats,
+                parser_for_format,
+                json_dir=options.fromJsonDir,
+                binary_dir=options.fromBinaryDir,
+                tags=export_tags,
+            )
+            return
         if not options.outXlsxDir:
             parser.error("--out-xlsx-dir required with --from-schema-dir")
         if not options.fromJsonDir and not options.fromBinaryDir:
@@ -274,6 +301,22 @@ e.g:
     if options.fromSchema or options.fromJson or options.fromBinary:
         if not options.fromSchema:
             parser.error("--from-schema required for single table -> xlsx")
+        if direct_mode:
+            if not options.fromJson and not options.fromBinary:
+                parser.error(
+                    "--from-json or --from-binary required "
+                    "(schema+data -> output format)"
+                )
+            write_data_from_data(
+                options.fromSchema,
+                options.outputDir,
+                direct_formats,
+                parser_for_format,
+                json_path=options.fromJson,
+                binary_path=options.fromBinary,
+                tags=export_tags,
+            )
+            return
         if not options.outXlsxDir:
             parser.error("--out-xlsx-dir required with --from-schema")
         if not options.fromJson and not options.fromBinary:

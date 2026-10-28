@@ -55,6 +55,14 @@ def isUInt64(value):
     return min_uint64 <= value and value <= max_uint64
 
 def toBool(value):
+    # Schema remarks/constraints commonly use default=true / default=false;
+    # accept the textual forms in addition to Excel's 0/1.
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token == "true":
+            return True, True
+        if token == "false":
+            return False, True
     result,ok = toInt(value)
     if not ok:
         return value,False

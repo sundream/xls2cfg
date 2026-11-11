@@ -371,16 +371,20 @@ namespace Cfg {
             if (count == 0) {
                 count = buffer.Length;
             }
+            pos = 0;
             Expand(count);
             Array.Copy(buffer,index,this.buffer,0,count);
+            size = count;
         }
 
         public void ReadFile(string filename) {
             FileStream fs = new FileStream(filename,FileMode.Open,FileAccess.Read);
             int length = (int)fs.Length;
+            pos = 0;
             Expand(length);
             fs.Read(buffer, 0, length);
             fs.Close();
+            size = length;
         }
 
         public void WriteFile(string filename) {

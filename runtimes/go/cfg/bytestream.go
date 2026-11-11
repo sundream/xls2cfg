@@ -319,12 +319,31 @@ func (bs *ByteStream) ToBytes() []byte {
 	return bs.buffer.Bytes()
 }
 
+// CopyBuffer replaces stream content for reading (same as C#: pos=0, size=count).
+// Optional indexAndCount: [index] or [index, count]; count==0 means to end of data.
+func (bs *ByteStream) CopyBuffer(data []byte, indexAndCount ...int) {
+	index, count := 0, 0
+	if len(indexAndCount) > 0 {
+		index = indexAndCount[0]
+	}
+	if len(indexAndCount) > 1 {
+		count = indexAndCount[1]
+	}
+	if count == 0 {
+		count = len(data) - index
+	}
+	buf := make([]byte, count)
+	copy(buf, data[index:index+count])
+	bs.buffer = bytes.NewBuffer(buf)
+}
+
 func (bs *ByteStream) ReadFile(filename string) error {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return err
 	}
-	bs.buffer.Write(data)
+	// Replace content; ready to read from start (same as C#: pos=0, size=len).
+	bs.buffer = bytes.NewBuffer(data)
 	return nil
 }
 
